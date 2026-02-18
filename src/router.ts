@@ -1,0 +1,24 @@
+
+import { Hono, Env } from 'hono';
+
+import * as api_connections from './routes/api/connections';
+import * as api_traces from './routes/api/traces';
+import * as connections_id from './routes/connections/[id]';
+import * as traces_id from './routes/traces/[id]';
+import * as connections_index from './routes/connections';
+import * as traces_index from './routes/traces';
+import * as voice from './routes/voice';
+import * as ws from './routes/ws';
+import * as index from './routes';
+
+export const loadRoutes = <T extends Env>(app: Hono<T>) => {
+	app.get('/api/connections', api_connections.onRequestGet);
+	app.get('/api/traces', api_traces.onRequestGet);
+	app.get('/connections/:id', connections_id.onRequestGet);
+	app.get('/traces/:id', traces_id.onRequestGet);
+	app.get('/connections', connections_index.onRequestGet);
+	app.get('/traces', traces_index.onRequestGet);
+	app.get('/voice', voice.onRequestGet);
+	app.get('/ws', ws.onRequestGet);
+	app.get('/', index.onRequestGet);
+};

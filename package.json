@@ -1,0 +1,32 @@
+{
+  "name": "pulsemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --port 8788",
+    "build": "vite build",
+    "routes": "hono-router ./src/routes ./src/router.ts",
+    "deploy": "vite build && wrangler deploy",
+    "test": "bun test",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "wrangler d1 migrations apply pulsemon-db",
+    "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql"
+  },
+  "dependencies": {
+    "drizzle-kit": "^0.31.9",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.7.0",
+    "hono-router": "^1.3.1",
+    "nanoid": "^5.1.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.20.1",
+    "@cloudflare/workers-types": "^4.20250214.0",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/bun": "^1.3.9",
+    "vite": "^7.3.1",
+    "vite-ssr-components": "^0.5.2",
+    "wrangler": "^4.0.0"
+  }
+}

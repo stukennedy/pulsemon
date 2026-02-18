@@ -1,0 +1,30 @@
+{
+  "name": "pulsemon",
+  "main": "src/index.ts",
+  "assets": {
+    "directory": "public"
+  },
+  "compatibility_date": "2025-02-18",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pulsemon-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SEARCH_SESSION",
+        "class_name": "SearchSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["SearchSession"]
+    }
+  ]
+}

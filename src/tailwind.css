@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #06080f;
+  --surface: rgba(255, 255, 255, 0.02);
+  --border: rgba(255, 255, 255, 0.06);
+}
+
+body {
+  background: var(--bg);
+  color: #94a3b8;
+  font-family: "Instrument Sans", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Live indicator pulse */
+.live-ring {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  50% { opacity: 0.7; box-shadow: 0 0 0 4px rgba(16, 185, 129, 0); }
+}
+
+/* Stat cards */
+.stat-card {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+}
+.stat-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #374151;
+  font-family: "IBM Plex Mono", monospace;
+}
+.stat-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: -0.02em;
+}
+
+/* Search input */
+.search-input:focus {
+  outline: none;
+}
+.search-input::placeholder {
+  color: #1e293b;
+}
+
+/* Log/connection rows */
+.log-row {
+  transition: background 0.12s ease;
+}
+.log-row:hover {
+  background: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Dropdown items */
+.dropdown-item {
+  transition: background 0.1s ease;
+}
+.dropdown-item:hover,
+.dropdown-item.highlighted {
+  background: rgba(34, 211, 238, 0.06);
+}
+
+/* Fade in */
+.fade-in {
+  animation: fadeIn 0.25s ease-out;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }

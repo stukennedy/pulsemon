@@ -1,0 +1,58 @@
+import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+
+export const connections = sqliteTable("connections", {
+  id: text("id").primaryKey(),
+  service: text("service").notNull(),
+  connection_type: text("connection_type").notNull(), // ws, sse, grpc
+  client_id: text("client_id"),
+  session_id: text("session_id"),
+  started_at: text("started_at").notNull().default(sql`(datetime('now'))`),
+  ended_at: text("ended_at"),
+  duration_ms: integer("duration_ms"),
+  close_reason: text("close_reason"),
+  status: text("status").notNull().default("active"), // active, closed, error
+  metadata: text("metadata"), // JSON
+});
+
+export const spans = sqliteTable("spans", {
+  id: text("id").primaryKey(),
+  trace_id: text("trace_id").notNull(),
+  parent_span_id: text("parent_span_id"),
+  connection_id: text("connection_id"),
+  service: text("service").notNull(),
+  operation: text("operation").notNull(),
+  started_at: text("started_at").notNull().default(sql`(datetime('now'))`),
+  ended_at: text("ended_at"),
+  duration_ms: integer("duration_ms"),
+  status: text("status").notNull().default("ok"), // ok, error
+  status_message: text("status_message"),
+  attributes: text("attributes"), // JSON
+});
+
+export const events = sqliteTable("events", {
+  id: text("id").primaryKey(),
+  connection_id: text("connection_id"),
+  span_id: text("span_id"),
+  trace_id: text("trace_id"),
+  event_type: text("event_type").notNull(), // message_sent, message_received, error, state_change, metric
+  timestamp: text("timestamp").notNull().default(sql`(datetime('now'))`),
+  data: text("data"), // JSON
+  direction: text("direction"), // inbound, outbound
+  size_bytes: integer("size_bytes"),
+});
+
+export const metrics = sqliteTable("metrics", {
+  id: text("id").primaryKey(),
+  service: text("service").notNull(),
+  metric_name: text("metric_name").notNull(),
+  metric_type: text("metric_type").notNull(), // gauge, counter, histogram
+  timestamp: text("timestamp").notNull().default(sql`(datetime('now'))`),
+  value: real("value").notNull(),
+  tags: text("tags"), // JSON
+});
+
+export type Connection = typeof connections.$inferSelect;
+export type Span = typeof spans.$inferSelect;
+export type Event = typeof events.$inferSelect;
+export type Metric = typeof metrics.$inferSelect;
