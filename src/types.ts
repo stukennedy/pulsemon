@@ -13,4 +13,5 @@ export interface ActiveTag {
 export interface Env {
   DB: D1Database;
   SEARCH_SESSION: DurableObjectNamespace;
+  INGEST_API_KEY?: string;
 }
