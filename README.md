@@ -326,78 +326,69 @@ curl -s "$PULSEMON_URL/api/ingest/voice/turns" \
 
 ### Instrumenting an app
 
-A small wrapper is enough for most services:
+Use the TypeScript SDK from `src/sdk` to keep instrumentation consistent:
 
 ```ts
-const pulsemonUrl = process.env.PULSEMON_URL ?? "http://localhost:8788";
-const pulsemonKey = process.env.PULSEMON_KEY;
+import { PulsemonClient, traceparent } from "./src/sdk";
 
-async function ingest(path: string, body: unknown, method = "POST") {
-  if (!pulsemonKey) return;
+const pulsemon = new PulsemonClient({
+  endpoint: process.env.PULSEMON_URL ?? "http://localhost:8788",
+  apiKey: process.env.PULSEMON_KEY!,
+  service: "voice-gateway",
+  defaultAttributes: { environment: process.env.NODE_ENV },
+});
 
-  await fetch(`${pulsemonUrl}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${pulsemonKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-}
+const connection = await pulsemon.connection({
+  connection_type: "ws",
+  client_id: "demo-client",
+  session_id: "demo-session",
+});
 
-export async function recordSpan<T>(
-  input: {
-    traceId: string;
-    connectionId?: string;
-    parentSpanId?: string;
-    service: string;
-    operation: string;
-    attributes?: Record<string, unknown>;
+await pulsemon.withSpan(
+  {
+    traceId: crypto.randomUUID().replaceAll("-", ""),
+    connectionId: connection.id,
+    operation: "llm.generate",
+    attributes: { provider: "openai" },
   },
-  fn: () => Promise<T>
-) {
-  const spanId = crypto.randomUUID();
-  const startedAt = new Date();
-  const start = performance.now();
-
-  try {
-    const result = await fn();
-    await ingest("/api/ingest/spans", {
-      id: spanId,
-      trace_id: input.traceId,
-      parent_span_id: input.parentSpanId,
-      connection_id: input.connectionId,
-      service: input.service,
-      operation: input.operation,
-      started_at: startedAt.toISOString(),
-      ended_at: new Date().toISOString(),
-      duration_ms: Math.round(performance.now() - start),
-      status: "ok",
-      attributes: input.attributes,
+  async (span) => {
+    await fetch("https://api.example/agent", {
+      headers: { traceparent: traceparent(span) },
     });
-    return result;
-  } catch (error) {
-    await ingest("/api/ingest/spans", {
-      id: spanId,
-      trace_id: input.traceId,
-      parent_span_id: input.parentSpanId,
-      connection_id: input.connectionId,
-      service: input.service,
-      operation: input.operation,
-      started_at: startedAt.toISOString(),
-      ended_at: new Date().toISOString(),
-      duration_ms: Math.round(performance.now() - start),
-      status: "error",
-      status_message: error instanceof Error ? error.message : String(error),
-      attributes: input.attributes,
-    });
-    throw error;
   }
-}
+);
+
+await pulsemon.log({
+  level: "info",
+  message: "agent response streamed",
+  connection_id: connection.id,
+});
+
+await pulsemon.voiceTurn({
+  connection_id: connection.id,
+  session_id: "demo-session",
+  role: "assistant",
+  transcript: "Your account balance is...",
+  llm_latency_ms: 850,
+  tts_latency_ms: 320,
+});
 ```
 
-For high-volume services, buffer records and flush them through
-`POST /api/ingest/batch` instead of sending one request per record.
+For high-volume services, buffer records and flush them through the batch
+endpoint:
+
+```ts
+const batch = pulsemon.batcher()
+  .log({ level: "info", message: "turn started" })
+  .metric({ metric_name: "voice.latency_ms", metric_type: "histogram", value: 240 })
+  .agentToolCall({
+    tool_name: "lookup_account",
+    status: "ok",
+    duration_ms: 90,
+  });
+
+await batch.flush();
+```
 
 ### Ingest endpoints
 
