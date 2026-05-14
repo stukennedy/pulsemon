@@ -82,6 +82,7 @@ export function createTestContext(): TestContext {
     (c.env as any) = {
       ...c.env,
       DB: d1,
+      INGEST_API_KEY: "test-key",
       SEARCH_SESSION: {
         idFromName: () => ({ toString: () => "test-id" }),
         get: () => ({ fetch: () => new Response("ws mock", { status: 101 }) }),

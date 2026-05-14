@@ -40,6 +40,231 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 | `/traces/:id` | Waterfall trace view |
 | `/voice` | Voice pipeline view — ASR→LLM→TTS flow |
 
+## Using Pulsemon
+
+Pulsemon is instrumented over HTTP. There is no SDK or OpenTelemetry collector in
+this repo yet: your application sends JSON records to `/api/ingest/*`, and the UI
+reads those records from D1.
+
+The basic model is:
+
+- Create a `connection` when a long-lived channel opens.
+- Add `events` for messages, errors, state changes, and other discrete moments.
+- Add `spans` for timed operations such as `asr.transcribe`, `llm.generate`, or
+  `tts.synthesize`.
+- Patch the connection and any open spans when they finish.
+- Reuse `connection_id`, `trace_id`, and `parent_span_id` to make the UI connect
+  the records into connection detail pages and trace waterfalls.
+
+### Ingest auth
+
+All ingest routes require `Authorization: Bearer <INGEST_API_KEY>`.
+
+For local development, create `.dev.vars`:
+
+```bash
+INGEST_API_KEY=local-dev-key
+```
+
+For a deployed Worker, set the secret:
+
+```bash
+wrangler secret put INGEST_API_KEY
+```
+
+### Minimal connection example
+
+This records a WebSocket session with two message events and then closes the
+connection:
+
+```bash
+export PULSEMON_URL=http://localhost:8788
+export PULSEMON_KEY=local-dev-key
+export CONNECTION_ID=conn_demo_1
+export TRACE_ID=trace_demo_1
+
+curl -s "$PULSEMON_URL/api/ingest/connections" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "'"$CONNECTION_ID"'",
+    "service": "voice-gateway",
+    "connection_type": "ws",
+    "client_id": "demo-client",
+    "session_id": "demo-session",
+    "metadata": { "path": "/voice" }
+  }'
+
+curl -s "$PULSEMON_URL/api/ingest/events" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "connection_id": "'"$CONNECTION_ID"'",
+      "trace_id": "'"$TRACE_ID"'",
+      "event_type": "message_received",
+      "direction": "inbound",
+      "size_bytes": 512,
+      "data": { "type": "audio_chunk" }
+    },
+    {
+      "connection_id": "'"$CONNECTION_ID"'",
+      "trace_id": "'"$TRACE_ID"'",
+      "event_type": "message_sent",
+      "direction": "outbound",
+      "size_bytes": 128,
+      "data": { "type": "partial_transcript" }
+    }
+  ]'
+
+curl -s -X PATCH "$PULSEMON_URL/api/ingest/connections/$CONNECTION_ID" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "closed",
+    "ended_at": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+    "duration_ms": 4200,
+    "close_reason": "client_disconnect"
+  }'
+```
+
+Open `/connections` to see the session, and click it to inspect its events.
+
+### Minimal trace example
+
+Spans are how Pulsemon builds trace waterfalls. Use one `trace_id` for a single
+request/session flow. Use `parent_span_id` when a span is nested under another
+span. Send `duration_ms` if you want latency charts and waterfall widths to be
+meaningful.
+
+```bash
+export ROOT_SPAN_ID=span_root_demo_1
+export LLM_SPAN_ID=span_llm_demo_1
+
+curl -s "$PULSEMON_URL/api/ingest/spans" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "'"$ROOT_SPAN_ID"'",
+    "trace_id": "'"$TRACE_ID"'",
+    "connection_id": "'"$CONNECTION_ID"'",
+    "service": "voice-gateway",
+    "operation": "voice.turn",
+    "duration_ms": 890,
+    "status": "ok"
+  }'
+
+curl -s "$PULSEMON_URL/api/ingest/spans" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "'"$LLM_SPAN_ID"'",
+    "trace_id": "'"$TRACE_ID"'",
+    "parent_span_id": "'"$ROOT_SPAN_ID"'",
+    "connection_id": "'"$CONNECTION_ID"'",
+    "service": "llm-service",
+    "operation": "llm.generate",
+    "duration_ms": 640,
+    "status": "ok",
+    "attributes": { "model": "example-model" }
+  }'
+```
+
+Open `/traces` and then the `trace_demo_1` trace to see the waterfall. The
+`/voice` page groups spans by operation prefix, so operations starting with
+`asr`, `llm`, and `tts` show in the voice pipeline view.
+
+### Instrumenting an app
+
+A small wrapper is enough for most services:
+
+```ts
+const pulsemonUrl = process.env.PULSEMON_URL ?? "http://localhost:8788";
+const pulsemonKey = process.env.PULSEMON_KEY;
+
+async function ingest(path: string, body: unknown, method = "POST") {
+  if (!pulsemonKey) return;
+
+  await fetch(`${pulsemonUrl}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${pulsemonKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function recordSpan<T>(
+  input: {
+    traceId: string;
+    connectionId?: string;
+    parentSpanId?: string;
+    service: string;
+    operation: string;
+    attributes?: Record<string, unknown>;
+  },
+  fn: () => Promise<T>
+) {
+  const spanId = crypto.randomUUID();
+  const startedAt = new Date();
+  const start = performance.now();
+
+  try {
+    const result = await fn();
+    await ingest("/api/ingest/spans", {
+      id: spanId,
+      trace_id: input.traceId,
+      parent_span_id: input.parentSpanId,
+      connection_id: input.connectionId,
+      service: input.service,
+      operation: input.operation,
+      started_at: startedAt.toISOString(),
+      ended_at: new Date().toISOString(),
+      duration_ms: Math.round(performance.now() - start),
+      status: "ok",
+      attributes: input.attributes,
+    });
+    return result;
+  } catch (error) {
+    await ingest("/api/ingest/spans", {
+      id: spanId,
+      trace_id: input.traceId,
+      parent_span_id: input.parentSpanId,
+      connection_id: input.connectionId,
+      service: input.service,
+      operation: input.operation,
+      started_at: startedAt.toISOString(),
+      ended_at: new Date().toISOString(),
+      duration_ms: Math.round(performance.now() - start),
+      status: "error",
+      status_message: error instanceof Error ? error.message : String(error),
+      attributes: input.attributes,
+    });
+    throw error;
+  }
+}
+```
+
+For high-volume services, buffer records and flush them through
+`POST /api/ingest/batch` instead of sending one request per record.
+
+### Ingest endpoints
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `POST` | `/api/ingest/connections` | Open or record a connection |
+| `PATCH` | `/api/ingest/connections/:id` | Close or update a connection |
+| `POST` | `/api/ingest/spans` | Record a span |
+| `PATCH` | `/api/ingest/spans/:id` | Close or update a span |
+| `POST` | `/api/ingest/events` | Record one event or up to 500 events |
+| `POST` | `/api/ingest/metrics` | Record one metric or up to 500 metrics |
+| `POST` | `/api/ingest/batch` | Record up to 1000 mixed operations |
+
+`connections` and `spans` inserts are idempotent by `id`: duplicate IDs are
+ignored. Use the `PATCH` endpoints when a connection or span changes state after
+it was first created.
+
 ## Development
 
 ```bash

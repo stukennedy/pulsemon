@@ -9,6 +9,7 @@
     "routes": "hono-router ./src/routes ./src/router.ts",
     "deploy": "vite build && wrangler deploy",
     "test": "bun test",
+    "typecheck": "tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply pulsemon-db",
     "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql"
@@ -16,6 +17,7 @@
   "dependencies": {
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
+    "effect": "^3.21.2",
     "hono": "^4.7.0",
     "hono-router": "^1.3.1",
     "nanoid": "^5.1.5"
@@ -25,6 +27,7 @@
     "@cloudflare/workers-types": "^4.20250214.0",
     "@tailwindcss/vite": "^4.1.18",
     "@types/bun": "^1.3.9",
+    "typescript": "^6.0.3",
     "vite": "^7.3.1",
     "vite-ssr-components": "^0.5.2",
     "wrangler": "^4.0.0"

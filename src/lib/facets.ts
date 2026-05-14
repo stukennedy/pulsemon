@@ -1,8 +1,15 @@
 import { drizzle } from "drizzle-orm/d1";
 import { asc, desc, count, sql, and, or, eq } from "drizzle-orm";
+import type { AnyColumn } from "drizzle-orm/column";
 import { connections, spans, events } from "@/db/schema";
 import type { Connection, Span, Event } from "@/db/schema";
 import type { ActiveTag } from "@/types";
+
+type FacetDefinition = {
+  name: string;
+  field: string;
+  col: AnyColumn;
+};
 
 // Connection facets
 export const CONNECTION_FACETS = [
@@ -24,7 +31,7 @@ export const SPAN_FACETS = [
 export const CONNECTION_FACET_NAMES = CONNECTION_FACETS.map((f) => f.name);
 export const SPAN_FACET_NAMES = SPAN_FACETS.map((f) => f.name);
 
-function buildConditions(activeTags: ActiveTag[], facets: typeof CONNECTION_FACETS) {
+function buildConditions(activeTags: ActiveTag[], facets: readonly FacetDefinition[]) {
   const byFacet = new Map<string, ActiveTag[]>();
   for (const tag of activeTags) {
     const group = byFacet.get(tag.facet) ?? [];

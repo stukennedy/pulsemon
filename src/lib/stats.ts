@@ -121,6 +121,10 @@ export async function queryConnectionStats(
   const conditions = buildConnectionConditions(activeTags);
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
+  const recentWhere = conditions.length > 0
+    ? and(...conditions, sql`started_at > datetime('now', '-14 days')`)
+    : sql`started_at > datetime('now', '-14 days')`;
+
   const [[summary], typeRows, serviceRows, volumeByDay] = await Promise.all([
     db.select({
       total: count(),
@@ -142,8 +146,8 @@ export async function queryConnectionStats(
     db.select({
       day: sql<string>`strftime('%m/%d', started_at)`,
       count: count(),
-    }).from(connections).where(where)
-      .where(sql`started_at > datetime('now', '-14 days')`)
+    }).from(connections)
+      .where(recentWhere)
       .groupBy(sql`strftime('%Y-%m-%d', started_at)`)
       .orderBy(sql`strftime('%Y-%m-%d', started_at)`),
   ]);
