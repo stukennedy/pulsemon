@@ -16,6 +16,10 @@ export class PayloadTooLargeError extends Data.TaggedError("PayloadTooLargeError
   readonly message: string;
 }> {}
 
+export class UnsupportedMediaTypeError extends Data.TaggedError("UnsupportedMediaTypeError")<{
+  readonly message: string;
+}> {}
+
 export class RateLimitError extends Data.TaggedError("RateLimitError")<{
   readonly message: string;
 }> {}
@@ -33,6 +37,7 @@ export type IngestError =
   | UnauthorizedError
   | ValidationError
   | PayloadTooLargeError
+  | UnsupportedMediaTypeError
   | RateLimitError
   | DatabaseError;
 
@@ -51,6 +56,8 @@ export function errorStatus(error: AppError): number {
       return 401;
     case "RateLimitError":
       return 429;
+    case "UnsupportedMediaTypeError":
+      return 415;
     case "NotFoundError":
       return 404;
     case "ValidationError":

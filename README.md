@@ -309,7 +309,10 @@ curl -s "$PULSEMON_URL/api/ingest/otlp/v1/traces" \
 ```
 
 The supported OTLP routes are `/api/ingest/otlp/v1/traces`,
-`/api/ingest/otlp/v1/metrics`, and `/api/ingest/otlp/v1/logs`.
+`/api/ingest/otlp/v1/metrics`, and `/api/ingest/otlp/v1/logs`. JSON request
+bodies may use `Content-Encoding: gzip`. Protobuf payloads currently return
+`415` with an explicit error so collector misconfiguration does not look like a
+schema validation failure.
 
 ### Realtime voice and agent records
 

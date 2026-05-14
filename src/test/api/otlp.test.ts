@@ -138,4 +138,50 @@ describe("POST /api/ingest/otlp", () => {
       connection_id: "conn-otlp-1",
     });
   });
+
+  it("accepts gzip-compressed OTLP JSON request bodies", async () => {
+    const payload = JSON.stringify({
+      resourceLogs: [{
+        resource: {
+          attributes: [{ key: "service.name", value: { stringValue: "voice-gateway" } }],
+        },
+        scopeLogs: [{
+          logRecords: [{
+            timeUnixNano: "1800000000000000000",
+            severityText: "INFO",
+            body: { stringValue: "compressed payload" },
+          }],
+        }],
+      }],
+    });
+
+    const res = await ctx.request("/api/ingest/otlp/v1/logs", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+        "Content-Encoding": "gzip",
+      },
+      body: Bun.gzipSync(Buffer.from(payload)),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as unknown;
+    expect(body).toEqual({ counts: { logs: 1 } });
+  });
+
+  it("returns 415 for OTLP protobuf bodies until protobuf ingest is enabled", async () => {
+    const res = await ctx.request("/api/ingest/otlp/v1/traces", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/x-protobuf",
+      },
+      body: new Uint8Array([0, 1, 2, 3]),
+    });
+
+    expect(res.status).toBe(415);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("protobuf");
+  });
 });

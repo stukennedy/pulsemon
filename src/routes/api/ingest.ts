@@ -5,6 +5,7 @@ import type { Env } from "@/types";
 import {
   errorStatus,
   PayloadTooLargeError,
+  UnsupportedMediaTypeError,
   ValidationError,
   type IngestError,
 } from "@/lib/effect/errors";
@@ -68,7 +69,48 @@ function byteLength(value: string) {
   return new TextEncoder().encode(value).byteLength;
 }
 
-function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, ValidationError | PayloadTooLargeError> {
+function isJsonContentType(contentType: string) {
+  return !contentType ||
+    contentType.includes("application/json") ||
+    contentType.includes("+json") ||
+    contentType.includes("text/json");
+}
+
+function decodeTextBody(
+  c: Context<{ Bindings: Env }>,
+  encoding: string
+): Effect.Effect<string, ValidationError | UnsupportedMediaTypeError> {
+  if (!encoding || encoding === "identity") {
+    return Effect.tryPromise({
+      try: () => c.req.text(),
+      catch: () => new ValidationError({ message: "Invalid body" }),
+    });
+  }
+
+  if (encoding !== "gzip") {
+    return Effect.fail(new UnsupportedMediaTypeError({
+      message: `Unsupported content encoding: ${encoding}`,
+    }));
+  }
+
+  if (typeof DecompressionStream === "undefined") {
+    return Effect.fail(new UnsupportedMediaTypeError({
+      message: "gzip request bodies are not supported in this runtime",
+    }));
+  }
+
+  return Effect.tryPromise({
+    try: async () => {
+      const stream = c.req.raw.body;
+      if (!stream) return "";
+      const response = new Response(stream.pipeThrough(new DecompressionStream("gzip")));
+      return response.text();
+    },
+    catch: () => new ValidationError({ message: "Invalid gzip body" }),
+  });
+}
+
+function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, ValidationError | PayloadTooLargeError | UnsupportedMediaTypeError> {
   return Effect.gen(function* () {
     const maxBytes = maxBodyBytes(c);
     const contentLength = Number(c.req.header("content-length") ?? 0);
@@ -76,10 +118,20 @@ function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, Validat
       return yield* Effect.fail(new PayloadTooLargeError({ message: `Payload exceeds ${maxBytes} bytes` }));
     }
 
-    const text = yield* Effect.tryPromise({
-      try: () => c.req.text(),
-      catch: () => new ValidationError({ message: "Invalid body" }),
-    });
+    const contentType = (c.req.header("content-type") ?? "").toLowerCase();
+    if (contentType.includes("application/x-protobuf")) {
+      return yield* Effect.fail(new UnsupportedMediaTypeError({
+        message: "OTLP protobuf ingest is not enabled; send OTLP JSON to this endpoint",
+      }));
+    }
+    if (!isJsonContentType(contentType)) {
+      return yield* Effect.fail(new UnsupportedMediaTypeError({
+        message: `Unsupported content type: ${contentType || "unknown"}`,
+      }));
+    }
+
+    const encoding = (c.req.header("content-encoding") ?? "").toLowerCase();
+    const text = yield* decodeTextBody(c, encoding);
 
     if (byteLength(text) > maxBytes) {
       return yield* Effect.fail(new PayloadTooLargeError({ message: `Payload exceeds ${maxBytes} bytes` }));
