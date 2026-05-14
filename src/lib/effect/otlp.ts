@@ -17,7 +17,9 @@ import type {
 export interface OtlpDeps {
   readonly repository: TelemetryRepository;
   readonly expectedApiKey?: string;
+  readonly apiKeys?: string;
   readonly authorization: string;
+  readonly requiredScope: string;
 }
 
 type OtlpRecord = Record<string, unknown>;
@@ -30,27 +32,62 @@ function now() {
   return new Date().toISOString();
 }
 
-function authorize(deps: OtlpDeps): Effect.Effect<void, MissingConfigError | UnauthorizedError> {
-  const expected = deps.expectedApiKey;
-  if (!expected) {
-    return Effect.fail(new MissingConfigError({ message: "Ingest API not configured" }));
-  }
-
-  const token = deps.authorization.startsWith("Bearer ")
-    ? deps.authorization.slice(7).trim()
-    : "";
-
-  if (!token || token !== expected) {
-    return Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
-  }
-
-  return Effect.void;
-}
-
 function asRecord(value: unknown): OtlpRecord | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as OtlpRecord
     : null;
+}
+
+function scopesForToken(raw: string, token: string): Effect.Effect<readonly string[] | null, MissingConfigError> {
+  try {
+    const parsed = asRecord(JSON.parse(raw));
+    if (!parsed) {
+      return Effect.fail(new MissingConfigError({ message: "Ingest API keys misconfigured" }));
+    }
+
+    const entry = parsed[token];
+    if (Array.isArray(entry)) {
+      return Effect.succeed(entry.filter((scope): scope is string => typeof scope === "string"));
+    }
+
+    const entryRecord = asRecord(entry);
+    const scopes = entryRecord?.scopes;
+    if (Array.isArray(scopes)) {
+      return Effect.succeed(scopes.filter((scope): scope is string => typeof scope === "string"));
+    }
+
+    return Effect.succeed(null);
+  } catch {
+    return Effect.fail(new MissingConfigError({ message: "Ingest API keys misconfigured" }));
+  }
+}
+
+function authorize(deps: OtlpDeps): Effect.Effect<void, MissingConfigError | UnauthorizedError> {
+  const expected = deps.expectedApiKey;
+  const token = deps.authorization.startsWith("Bearer ")
+    ? deps.authorization.slice(7).trim()
+    : "";
+
+  if (!token) {
+    return Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
+  }
+
+  if (deps.apiKeys) {
+    return Effect.gen(function* () {
+      const scopes = yield* scopesForToken(deps.apiKeys!, token);
+      if (!scopes || (!scopes.includes("*") && !scopes.includes(deps.requiredScope))) {
+        return yield* Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
+      }
+    });
+  }
+
+  if (!expected) {
+    return Effect.fail(new MissingConfigError({ message: "Ingest API not configured" }));
+  }
+
+  return token === expected
+    ? Effect.void
+    : Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
 }
 
 function asArray(value: unknown): unknown[] {

@@ -138,3 +138,5 @@ Expected outcomes:
   `agent_tool_calls` for tool execution, retries, inputs, outputs, and errors.
 - 2026-05-14: started production controls with optional UI/read API Basic auth
   and configurable ingest payload size limits.
+- 2026-05-14: added scoped ingest API keys through `INGEST_API_KEYS`, while
+  retaining the legacy single `INGEST_API_KEY` path.

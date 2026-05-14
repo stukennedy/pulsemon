@@ -76,12 +76,15 @@ Optional production controls:
 
 ```bash
 wrangler secret put UI_BASIC_AUTH   # value format: username:password
+wrangler secret put INGEST_API_KEYS # JSON map of bearer token to scopes
 wrangler secret put INGEST_MAX_BYTES
 ```
 
 `UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
 `INGEST_MAX_BYTES` defaults to `1000000` bytes and rejects oversized ingest
 payloads before decoding JSON.
+`INGEST_API_KEYS` can replace `INGEST_API_KEY` when you need scoped keys, for
+example `{ "logs-token": ["logs"], "admin-token": ["*"] }`.
 
 ### Minimal connection example
 

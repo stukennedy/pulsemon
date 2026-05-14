@@ -43,6 +43,43 @@ describe("POST /api/ingest", () => {
     expect(body.error).toContain("Payload exceeds");
   });
 
+  it("enforces scoped ingest API keys when configured", async () => {
+    ctx = createTestContext({
+      env: {
+        INGEST_API_KEY: undefined,
+        INGEST_API_KEYS: JSON.stringify({
+          "logs-key": ["logs"],
+          "metrics-key": ["metrics"],
+        }),
+      },
+    });
+
+    const allowed = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer logs-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ service: "voice-gateway", level: "info", message: "scoped log" }),
+    });
+    expect(allowed.status).toBe(201);
+
+    const denied = await ctx.request("/api/ingest/metrics", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer logs-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        service: "voice-gateway",
+        metric_name: "voice.latency_ms",
+        metric_type: "histogram",
+        value: 123,
+      }),
+    });
+    expect(denied.status).toBe(401);
+  });
+
   it("validates required connection fields", async () => {
     const res = await ctx.request("/api/ingest/connections", {
       method: "POST",

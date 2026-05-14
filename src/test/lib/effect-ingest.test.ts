@@ -25,6 +25,7 @@ function deps(repository: TelemetryRepository) {
     repository,
     expectedApiKey: "test-key",
     authorization: "Bearer test-key",
+    requiredScope: "*",
   };
 }
 

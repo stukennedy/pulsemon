@@ -29,21 +29,25 @@ import {
 } from "@/lib/effect/otlp";
 import { makeD1TelemetryRepository } from "@/lib/effect/repository";
 
-function deps(c: Context<{ Bindings: Env }>): IngestDeps {
+function deps(c: Context<{ Bindings: Env }>, requiredScope: string): IngestDeps {
   const repository = makeD1TelemetryRepository(c.env.DB);
   return {
     repository,
     expectedApiKey: c.env.INGEST_API_KEY,
+    apiKeys: c.env.INGEST_API_KEYS,
     authorization: c.req.header("Authorization") ?? "",
+    requiredScope,
   };
 }
 
-function otlpDeps(c: Context<{ Bindings: Env }>): OtlpDeps {
+function otlpDeps(c: Context<{ Bindings: Env }>, requiredScope: string): OtlpDeps {
   const repository = makeD1TelemetryRepository(c.env.DB);
   return {
     repository,
     expectedApiKey: c.env.INGEST_API_KEY,
+    apiKeys: c.env.INGEST_API_KEYS,
     authorization: c.req.header("Authorization") ?? "",
+    requiredScope,
   };
 }
 
@@ -99,88 +103,88 @@ async function runJson<A>(
 export const postConnections = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postConnectionEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postConnectionEffect(deps(c, "connections"), body))),
     201
   );
 
 export const patchConnection = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => patchConnectionEffect(deps(c), c.req.param("id"), body)))
+    readJson(c).pipe(Effect.flatMap((body) => patchConnectionEffect(deps(c, "connections"), c.req.param("id"), body)))
   );
 
 export const postSpans = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postSpanEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postSpanEffect(deps(c, "traces"), body))),
     201
   );
 
 export const patchSpan = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => patchSpanEffect(deps(c), c.req.param("id"), body)))
+    readJson(c).pipe(Effect.flatMap((body) => patchSpanEffect(deps(c, "traces"), c.req.param("id"), body)))
   );
 
 export const postEvents = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postEventsEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postEventsEffect(deps(c, "events"), body))),
     201
   );
 
 export const postMetrics = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postMetricsEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postMetricsEffect(deps(c, "metrics"), body))),
     201
   );
 
 export const postLogs = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postLogsEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postLogsEffect(deps(c, "logs"), body))),
     201
   );
 
 export const postVoiceTurns = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postVoiceTurnsEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postVoiceTurnsEffect(deps(c, "voice"), body))),
     201
   );
 
 export const postAgentToolCalls = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postAgentToolCallsEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postAgentToolCallsEffect(deps(c, "agent"), body))),
     201
   );
 
 export const postBatch = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postBatchEffect(deps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postBatchEffect(deps(c, "*"), body))),
     201
   );
 
 export const postOtlpTraces = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postOtlpTracesEffect(otlpDeps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postOtlpTracesEffect(otlpDeps(c, "traces"), body))),
     201
   );
 
 export const postOtlpMetrics = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postOtlpMetricsEffect(otlpDeps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postOtlpMetricsEffect(otlpDeps(c, "metrics"), body))),
     201
   );
 
 export const postOtlpLogs = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postOtlpLogsEffect(otlpDeps(c), body))),
+    readJson(c).pipe(Effect.flatMap((body) => postOtlpLogsEffect(otlpDeps(c, "logs"), body))),
     201
   );
