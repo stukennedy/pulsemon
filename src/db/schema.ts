@@ -161,6 +161,35 @@ export const monitor_evaluations = sqliteTable("monitor_evaluations", {
   evaluated_at: text("evaluated_at").notNull(),
 });
 
+export const alert_incidents = sqliteTable("alert_incidents", {
+  id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  monitor_id: text("monitor_id").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull(),
+  started_at: text("started_at").notNull(),
+  last_seen_at: text("last_seen_at").notNull(),
+  resolved_at: text("resolved_at"),
+  last_value: real("last_value"),
+  threshold: real("threshold").notNull(),
+  notification_count: integer("notification_count").notNull().default(0),
+});
+
+export const alert_notifications = sqliteTable("alert_notifications", {
+  id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  incident_id: text("incident_id").notNull(),
+  monitor_id: text("monitor_id").notNull(),
+  event_type: text("event_type").notNull(),
+  target_url: text("target_url"),
+  status: text("status").notNull(),
+  response_status: integer("response_status"),
+  error: text("error"),
+  sent_at: text("sent_at").notNull(),
+});
+
 export type Connection = typeof connections.$inferSelect;
 export type Span = typeof spans.$inferSelect;
 export type Event = typeof events.$inferSelect;
@@ -171,3 +200,5 @@ export type AgentToolCall = typeof agent_tool_calls.$inferSelect;
 export type MetricRollup1m = typeof metric_rollups_1m.$inferSelect;
 export type IngestRateLimit = typeof ingest_rate_limits.$inferSelect;
 export type MonitorEvaluationRecord = typeof monitor_evaluations.$inferSelect;
+export type AlertIncident = typeof alert_incidents.$inferSelect;
+export type AlertNotification = typeof alert_notifications.$inferSelect;

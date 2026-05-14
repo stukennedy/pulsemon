@@ -121,3 +121,7 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: added rollup-aware metric series querying with
   `/api/metrics/timeseries` and a metrics-page trend chart that switches from
   raw samples to `metric_rollups_1m` for longer windows.
+- 2026-05-14: added alert incident state and webhook delivery for monitor
+  evaluations, including firing/resolved incidents, notification history,
+  scheduled processing, and route-triggered processing from `/monitors` and
+  `/api/monitors`.

@@ -4,7 +4,10 @@ import type { Env } from "./types";
 import { loadLayouts } from "./layouts";
 import { loadRoutes } from "./router";
 import { checkUiAuth } from "./lib/auth";
+import { alertConfigFromEnv, processMonitorAlerts } from "./lib/effect/alerts";
 import { runMaintenanceFromEnv } from "./lib/effect/maintenance";
+import { evaluateAndPersistRealtimeMonitors } from "./lib/effect/monitors";
+import { tenantScopeFromEnv } from "./lib/tenant";
 
 export { SearchSession } from "./lib/search-session";
 
@@ -24,7 +27,14 @@ const handler: ExportedHandler<Env> = {
     return app.fetch(request, env, ctx);
   },
   scheduled(_controller, env, ctx) {
-    ctx.waitUntil(Effect.runPromise(runMaintenanceFromEnv(env)));
+    const tenant = tenantScopeFromEnv(env);
+    ctx.waitUntil(Effect.runPromise(Effect.all([
+      runMaintenanceFromEnv(env),
+      Effect.gen(function* () {
+        const monitors = yield* evaluateAndPersistRealtimeMonitors(env.DB, tenant);
+        return yield* processMonitorAlerts(env.DB, tenant, monitors, alertConfigFromEnv(env));
+      }),
+    ], { concurrency: 1 })));
   },
 };
 

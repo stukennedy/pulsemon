@@ -37,5 +37,7 @@ export interface Env {
   INGEST_RATE_LIMIT_PER_MINUTE?: string;
   INGEST_SAMPLE_RATE?: string;
   MAINTENANCE_API_KEY?: string;
+  ALERT_WEBHOOK_URL?: string;
+  ALERT_WEBHOOK_SECRET?: string;
   UI_BASIC_AUTH?: string;
 }

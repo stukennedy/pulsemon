@@ -4,14 +4,18 @@ import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import { Nav } from "@/components/Nav";
 import { MonitorTable } from "@/components/MonitorTable";
+import { alertConfigFromEnv, processMonitorAlerts } from "@/lib/effect/alerts";
 import { errorStatus } from "@/lib/effect/errors";
 import { evaluateAndPersistRealtimeMonitors } from "@/lib/effect/monitors";
 import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
-  const result = await Effect.runPromise(Effect.either(
-    evaluateAndPersistRealtimeMonitors(c.env.DB, tenantScopeFromEnv(c.env))
-  ));
+  const tenant = tenantScopeFromEnv(c.env);
+  const result = await Effect.runPromise(Effect.either(Effect.gen(function* () {
+    const monitors = yield* evaluateAndPersistRealtimeMonitors(c.env.DB, tenant);
+    yield* processMonitorAlerts(c.env.DB, tenant, monitors, alertConfigFromEnv(c.env));
+    return monitors;
+  })));
 
   if (Either.isLeft(result)) {
     const error = result.left;

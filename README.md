@@ -91,6 +91,8 @@ wrangler secret put INGEST_MAX_BYTES
 wrangler secret put DEFAULT_WORKSPACE_ID
 wrangler secret put DEFAULT_PROJECT_ID
 wrangler secret put MAINTENANCE_API_KEY
+wrangler secret put ALERT_WEBHOOK_URL
+wrangler secret put ALERT_WEBHOOK_SECRET
 ```
 
 `UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
@@ -142,7 +144,10 @@ connection and span lifecycle records.
 Monitor evaluations are available at `/monitors` and `/api/monitors`. They
 currently cover ASR/LLM/TTS p95 latency, voice interruption rate, agent tool
 error rate, and connection error rate over a 15-minute window, and each
-evaluation is stored in `monitor_evaluations`.
+evaluation is stored in `monitor_evaluations`. Alert incidents are opened and
+resolved from those evaluations in `alert_incidents`; when `ALERT_WEBHOOK_URL`
+is set, Pulsemon posts `opened` and `resolved` notifications and stores delivery
+attempts in `alert_notifications`.
 
 Voice sessions are available at `/voice`, `/sessions/:id`, `/api/sessions`, and
 `/api/sessions/:id`. Session detail correlates voice turns, tool calls, spans,
