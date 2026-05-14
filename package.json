@@ -16,6 +16,7 @@
     "load:ingest": "bun scripts/load-ingest.ts",
     "capacity:check": "bun scripts/capacity-check.ts",
     "dr:check": "bun scripts/dr-check.ts",
+    "otlp:certify": "bun scripts/otlp-certify.ts",
     "restore:check": "bun scripts/restore-check.ts",
     "smoke": "bun scripts/smoke.ts"
   },

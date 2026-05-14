@@ -195,10 +195,22 @@ service:
 The OTLP HTTP exporter appends `/v1/traces`, `/v1/metrics`, and `/v1/logs` to
 the configured endpoint.
 
+Run the fixture certification suite against staging before onboarding a new
+SDK/Collector version:
+
+```bash
+PULSEMON_URL=https://staging.example.com \
+PULSEMON_KEY=<staging-otlp-key> \
+PULSEMON_OTEL_SDK=nodejs \
+PULSEMON_OTEL_SDK_VERSION=<sdk-version> \
+PULSEMON_OTEL_COLLECTOR_VERSION=<collector-version> \
+bun run otlp:certify
+```
+
 ## Residual Enterprise Gaps
 
 These are not blockers for a controlled platform-team rollout, but they remain
 before calling Pulsemon a broad Datadog replacement:
 
-- Live certification rows for the exact OpenTelemetry SDK and Collector
-  versions adopted by each platform team.
+- Live certification evidence should be added for each platform team's exact
+  OpenTelemetry SDK and Collector versions as they are onboarded.

@@ -74,6 +74,9 @@ searching, session timelines, and downstream SLO/monitor workflows.
 For each platform rollout:
 
 - Run `bun test src/test/api/otlp.test.ts`.
+- Run `bun run otlp:certify` against the staging Pulsemon endpoint with
+  `PULSEMON_OTEL_SDK_VERSION` and `PULSEMON_OTEL_COLLECTOR_VERSION` set when
+  applicable.
 - Send trace, metric, and log exports through the target SDK or Collector to a
   staging Pulsemon instance.
 - Confirm `service.name`, trace IDs, span IDs, log correlation, metric tags,

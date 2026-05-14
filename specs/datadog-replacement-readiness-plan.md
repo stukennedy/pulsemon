@@ -159,3 +159,5 @@ Control risk in high-volume, multi-team telemetry.
   including OTLP bucket and quantile translation.
 - 2026-05-14: added `bun run dr:check` for primary/standby DR readiness checks
   across ingest, metric readback, and authenticated read APIs.
+- 2026-05-14: added `bun run otlp:certify` to replay the repo-owned OTLP
+  fixture suite against live endpoints with SDK/Collector metadata.

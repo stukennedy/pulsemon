@@ -541,6 +541,7 @@ bun run routes     # Regenerate router after adding routes
 bun run load:ingest # Configurable ingest load test
 bun run capacity:check # Gated ingest/readback capacity check
 bun run dr:check       # Primary/standby DR readiness check
+bun run otlp:certify   # Replay OTLP fixture suite against a deployment
 bun run restore:check  # Validate migrations or an exported SQL restore
 bun run smoke      # Ingest/query smoke check against a running deployment
 ```
@@ -564,6 +565,11 @@ database.
 readiness metric/log to both endpoints and checking readback/API health. Set
 `PULSEMON_DR_PRIMARY_URL`, `PULSEMON_DR_STANDBY_URL`, and either shared
 `PULSEMON_KEY`/`PULSEMON_BASIC_AUTH` or endpoint-specific key/auth variables.
+
+`otlp:certify` requires `PULSEMON_KEY` and replays the repo-owned OTLP
+JSON/protobuf/gzip fixtures against `PULSEMON_URL`. Set
+`PULSEMON_OTEL_SDK_VERSION` and `PULSEMON_OTEL_COLLECTOR_VERSION` to include
+platform certification metadata in the output.
 
 `smoke` requires `PULSEMON_KEY` and defaults to
 `PULSEMON_URL=http://localhost:8788`. Set `PULSEMON_BASIC_AUTH=username:password`
