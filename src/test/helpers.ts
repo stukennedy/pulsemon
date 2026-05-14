@@ -3,10 +3,10 @@ import { Database } from "bun:sqlite";
 import { loadRoutes } from "@/router";
 import { loadLayouts } from "@/layouts";
 import type { Env } from "@/types";
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync } from "fs";
 import path from "path";
 
-const MIGRATION_PATH = path.resolve(import.meta.dir, "../../migrations/0001_init.sql");
+const MIGRATIONS_DIR = path.resolve(import.meta.dir, "../../migrations");
 
 function createD1Shim(sqlite: Database): D1Database {
   return {
@@ -66,14 +66,19 @@ export interface TestContext {
     id: string; connection_id: string; span_id: string; trace_id: string;
     event_type: string; timestamp: string; direction: string; size_bytes: number;
   }>) => void;
+  seedLog: (overrides?: Partial<{
+    id: string; timestamp: string; level: string; service: string; message: string;
+    trace_id: string; span_id: string; connection_id: string; attributes: string;
+  }>) => void;
 }
 
 export function createTestContext(): TestContext {
   const sqlite = new Database(":memory:");
   sqlite.exec("PRAGMA journal_mode = WAL");
 
-  const migration = readFileSync(MIGRATION_PATH, "utf-8");
-  sqlite.exec(migration);
+  for (const file of readdirSync(MIGRATIONS_DIR).filter((name) => name.endsWith(".sql")).sort()) {
+    sqlite.exec(readFileSync(path.join(MIGRATIONS_DIR, file), "utf-8"));
+  }
 
   const d1 = createD1Shim(sqlite);
   const app = new Hono<{ Bindings: Env }>();
@@ -151,7 +156,25 @@ export function createTestContext(): TestContext {
     );
   };
 
+  const seedLog = (overrides?: any) => {
+    seq++;
+    sqlite.prepare(`
+      INSERT INTO logs (id, timestamp, level, service, message, trace_id, span_id, connection_id, attributes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      overrides?.id ?? `log-${seq}`,
+      overrides?.timestamp ?? new Date(Date.now() - seq * 1000).toISOString(),
+      overrides?.level ?? "info",
+      overrides?.service ?? "voice-gateway",
+      overrides?.message ?? "session event",
+      overrides?.trace_id ?? null,
+      overrides?.span_id ?? null,
+      overrides?.connection_id ?? null,
+      overrides?.attributes ?? null,
+    );
+  };
+
   const request = async (path: string, init?: RequestInit) => app.request(path, init);
 
-  return { app, sqlite, d1, request, seedConnection, seedSpan, seedEvent };
+  return { app, sqlite, d1, request, seedConnection, seedSpan, seedEvent, seedLog };
 }

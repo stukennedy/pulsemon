@@ -11,6 +11,7 @@ import type {
   ConnectionInsert,
   ConnectionUpdate,
   EventInsert,
+  LogInsert,
   MetricInsert,
   SpanInsert,
   SpanUpdate,
@@ -23,6 +24,7 @@ import {
   PatchSpanInputSchema,
   PostConnectionInputSchema,
   PostEventInputSchema,
+  PostLogInputSchema,
   PostMetricInputSchema,
   PostSpanInputSchema,
   type BatchInput,
@@ -30,6 +32,7 @@ import {
   type PatchSpanInput,
   type PostConnectionInput,
   type PostEventInput,
+  type PostLogInput,
   type PostMetricInput,
   type PostSpanInput,
 } from "./schemas";
@@ -181,6 +184,20 @@ function metricInsert(input: PostMetricInput): MetricInsert {
   };
 }
 
+function logInsert(input: PostLogInput): LogInsert {
+  return {
+    id: input.id || uuid(),
+    timestamp: input.timestamp || now(),
+    level: input.level,
+    service: input.service,
+    message: input.message,
+    trace_id: input.trace_id,
+    span_id: input.span_id,
+    connection_id: input.connection_id,
+    attributes: input.attributes,
+  };
+}
+
 function normalizeBatch(input: BatchInput): TelemetryBatchWrite {
   const connectionUpdates: ConnectionUpdate[] = [];
   for (const update of input.connection_updates ?? []) {
@@ -203,6 +220,7 @@ function normalizeBatch(input: BatchInput): TelemetryBatchWrite {
     spanUpdates,
     events: (input.events ?? []).map(eventInsert),
     metrics: (input.metrics ?? []).map(metricInsert),
+    logs: (input.logs ?? []).map(logInsert),
   };
 }
 
@@ -214,6 +232,7 @@ function batchCounts(input: TelemetryBatchWrite) {
   if (input.spanUpdates.length > 0) counts.span_updates = input.spanUpdates.length;
   if (input.events.length > 0) counts.events = input.events.length;
   if (input.metrics.length > 0) counts.metrics = input.metrics.length;
+  if (input.logs.length > 0) counts.logs = input.logs.length;
   return counts;
 }
 
@@ -224,7 +243,8 @@ function operationCount(input: TelemetryBatchWrite) {
     input.spans.length +
     input.spanUpdates.length +
     input.events.length +
-    input.metrics.length
+    input.metrics.length +
+    input.logs.length
   );
 }
 
@@ -316,6 +336,25 @@ export function postMetrics(
     );
     const records = items.map(metricInsert);
     yield* deps.repository.insertMetrics(records);
+    return { count: records.length };
+  });
+}
+
+export function postLogs(
+  deps: IngestDeps,
+  raw: unknown
+): Effect.Effect<{ count: number }, IngestError> {
+  return Effect.gen(function* () {
+    yield* authorize(deps);
+    const items = yield* decodeArray(
+      PostLogInputSchema,
+      raw,
+      "No logs provided",
+      1000,
+      "Max 1000 logs per request"
+    );
+    const records = items.map(logInsert);
+    yield* deps.repository.insertLogs(records);
     return { count: records.length };
   });
 }

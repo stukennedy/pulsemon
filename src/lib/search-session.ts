@@ -2,20 +2,23 @@ import { DurableObject } from "cloudflare:workers";
 import { Effect } from "effect";
 import type { ActiveTag, Env } from "../types";
 import {
-  CONNECTION_FACET_NAMES, SPAN_FACET_NAMES,
+  CONNECTION_FACET_NAMES, LOG_FACET_NAMES, SPAN_FACET_NAMES,
 } from "./facets";
 import {
   getConnectionFacetValues as getConnectionFacetValuesEffect,
+  getLogFacetValues as getLogFacetValuesEffect,
   getSpanFacetValues as getSpanFacetValuesEffect,
   makeD1TelemetryQueryRepository,
   queryConnectionStats as queryConnectionStatsEffect,
   queryConnections as queryConnectionsEffect,
+  queryLogs as queryLogsEffect,
   querySpans as querySpansEffect,
   type QueryDeps,
 } from "./effect/query";
 import type { QueryError } from "./effect/errors";
 import { jsxToString } from "./render";
 import { ConnectionTable } from "@/components/ConnectionTable";
+import { LogTable } from "@/components/LogTable";
 import { TraceList } from "@/components/TraceWaterfall";
 import { TagBar } from "@/components/TagBar";
 import { ConnectionStatsBar } from "@/components/StatsBar";
@@ -46,6 +49,9 @@ export class SearchSession extends DurableObject<Env> {
     } else if (this.view === "traces") {
       const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), this.tags));
       this.sendUi(server, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
+    } else if (this.view === "logs") {
+      const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), this.tags));
+      this.sendUi(server, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
     }
 
     return new Response(null, { status: 101, webSocket: client });
@@ -90,7 +96,9 @@ export class SearchSession extends DurableObject<Env> {
   }
 
   private getFacetNames(): string[] {
-    return this.view === "traces" ? SPAN_FACET_NAMES : CONNECTION_FACET_NAMES;
+    if (this.view === "traces") return SPAN_FACET_NAMES;
+    if (this.view === "logs") return LOG_FACET_NAMES;
+    return CONNECTION_FACET_NAMES;
   }
 
   private queryDeps(): QueryDeps {
@@ -102,9 +110,13 @@ export class SearchSession extends DurableObject<Env> {
   }
 
   private async getFacetValues(facet: string, prefix: string, tags: ActiveTag[]): Promise<string[]> {
-    return this.view === "traces"
-      ? this.runQuery(getSpanFacetValuesEffect(this.queryDeps(), facet, prefix, tags))
-      : this.runQuery(getConnectionFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
+    if (this.view === "traces") {
+      return this.runQuery(getSpanFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
+    }
+    if (this.view === "logs") {
+      return this.runQuery(getLogFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
+    }
+    return this.runQuery(getConnectionFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
   }
 
   private async handleSuggest(ws: WebSocket, query: string, activeTags: ActiveTag[], requestId?: string) {
@@ -148,6 +160,9 @@ export class SearchSession extends DurableObject<Env> {
     } else if (this.view === "traces") {
       const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), tags));
       this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
+    } else if (this.view === "logs") {
+      const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), tags));
+      this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
     }
   }
 
@@ -165,6 +180,9 @@ export class SearchSession extends DurableObject<Env> {
     } else if (this.view === "traces") {
       const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), tags));
       this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
+    } else if (this.view === "logs") {
+      const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), tags));
+      this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
     }
 
     this.sendUi(ws, "#tag-bar", "outerHTML", await jsxToString(TagBar({ tags })));

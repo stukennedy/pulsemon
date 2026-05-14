@@ -124,3 +124,6 @@ Expected outcomes:
   search session now call a typed Effect `QueryService` backed by
   `TelemetryQueryRepository`, with pagination validation and tagged database
   errors.
+- 2026-05-14: started the first-class observability model by adding logs as a
+  separate signal with storage, typed ingest, batch support, query filtering,
+  UI/API routes, and documentation.

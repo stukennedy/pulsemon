@@ -174,6 +174,28 @@ Open `/traces` and then the `trace_demo_1` trace to see the waterfall. The
 `/voice` page groups spans by operation prefix, so operations starting with
 `asr`, `llm`, and `tts` show in the voice pipeline view.
 
+### Minimal log example
+
+Logs are a first-class signal and can be linked back to traces, spans, and
+connections:
+
+```bash
+curl -s "$PULSEMON_URL/api/ingest/logs" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service": "voice-gateway",
+    "level": "error",
+    "message": "provider timeout during realtime turn",
+    "trace_id": "'"$TRACE_ID"'",
+    "connection_id": "'"$CONNECTION_ID"'",
+    "attributes": { "provider": "asr", "retryable": true }
+  }'
+```
+
+Open `/logs` to filter logs by `service`, `level`, `trace`, `span`, or
+`connection`.
+
 ### Instrumenting an app
 
 A small wrapper is enough for most services:
@@ -259,6 +281,7 @@ For high-volume services, buffer records and flush them through
 | `PATCH` | `/api/ingest/spans/:id` | Close or update a span |
 | `POST` | `/api/ingest/events` | Record one event or up to 500 events |
 | `POST` | `/api/ingest/metrics` | Record one metric or up to 500 metrics |
+| `POST` | `/api/ingest/logs` | Record one log or up to 1000 logs |
 | `POST` | `/api/ingest/batch` | Record up to 1000 mixed operations |
 
 `connections` and `spans` inserts are idempotent by `id`: duplicate IDs are
@@ -269,7 +292,7 @@ it was first created.
 
 ```bash
 bun install
-bun test           # Run tests (21 tests, all passing)
+bun test           # Run tests
 bun run dev        # Dev server on :8788
 bun run routes     # Regenerate router after adding routes
 ```

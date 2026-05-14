@@ -1,12 +1,14 @@
 import { Effect } from "effect";
-import type { Connection, Event, Span } from "@/db/schema";
+import type { Connection, Event, LogRecord, Span } from "@/db/schema";
 import type { ActiveTag } from "@/types";
 import {
   getConnectionDetail as getConnectionDetailFromD1,
   getConnectionFacetValues as getConnectionFacetValuesFromD1,
+  getLogFacetValues as getLogFacetValuesFromD1,
   getSpanFacetValues as getSpanFacetValuesFromD1,
   getTraceSpans as getTraceSpansFromD1,
   queryConnections as queryConnectionsFromD1,
+  queryLogs as queryLogsFromD1,
   querySpans as querySpansFromD1,
 } from "@/lib/facets";
 import {
@@ -41,6 +43,11 @@ export interface SpanQueryResult {
   readonly total: number;
 }
 
+export interface LogQueryResult {
+  readonly logs: LogRecord[];
+  readonly total: number;
+}
+
 export interface ConnectionDetailResult {
   readonly connection: Connection | null;
   readonly events: Event[];
@@ -57,6 +64,10 @@ export interface TelemetryQueryRepository {
     activeTags: readonly ActiveTag[],
     pagination: Pick<NormalizedPagination, "limit">
   ) => Effect.Effect<SpanQueryResult, DatabaseError>;
+  readonly queryLogs: (
+    activeTags: readonly ActiveTag[],
+    pagination: NormalizedPagination
+  ) => Effect.Effect<LogQueryResult, DatabaseError>;
   readonly getTraceSpans: (traceId: string) => Effect.Effect<Span[], DatabaseError>;
   readonly getConnectionFacetValues: (
     facet: string,
@@ -64,6 +75,11 @@ export interface TelemetryQueryRepository {
     activeTags: readonly ActiveTag[]
   ) => Effect.Effect<string[], DatabaseError>;
   readonly getSpanFacetValues: (
+    facet: string,
+    prefix: string,
+    activeTags: readonly ActiveTag[]
+  ) => Effect.Effect<string[], DatabaseError>;
+  readonly getLogFacetValues: (
     facet: string,
     prefix: string,
     activeTags: readonly ActiveTag[]
@@ -119,6 +135,10 @@ export function makeD1TelemetryQueryRepository(d1: D1Database): TelemetryQueryRe
       querySpansFromD1(d1, [...activeTags], pagination.limit)
     ),
 
+    queryLogs: (activeTags, pagination) => dbEffect(() =>
+      queryLogsFromD1(d1, [...activeTags], pagination.limit, pagination.offset)
+    ),
+
     getTraceSpans: (traceId) => dbEffect(() =>
       getTraceSpansFromD1(d1, traceId)
     ),
@@ -129,6 +149,10 @@ export function makeD1TelemetryQueryRepository(d1: D1Database): TelemetryQueryRe
 
     getSpanFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
       getSpanFacetValuesFromD1(d1, facet, prefix, [...activeTags])
+    ),
+
+    getLogFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
+      getLogFacetValuesFromD1(d1, facet, prefix, [...activeTags])
     ),
 
     queryDashboardStats: () => dbEffect(() =>
@@ -178,6 +202,21 @@ export function querySpans(
   });
 }
 
+export function queryLogs(
+  deps: QueryDeps,
+  activeTags: readonly ActiveTag[],
+  pagination: Pagination = {}
+): Effect.Effect<LogQueryResult, QueryError> {
+  return Effect.gen(function* () {
+    const normalized = yield* normalizePagination(
+      pagination,
+      { limit: 100, offset: 0 },
+      1000
+    );
+    return yield* deps.repository.queryLogs(activeTags, normalized);
+  });
+}
+
 export function getTraceSpans(
   deps: QueryDeps,
   traceId: string
@@ -201,6 +240,15 @@ export function getSpanFacetValues(
   activeTags: readonly ActiveTag[]
 ): Effect.Effect<string[], QueryError> {
   return deps.repository.getSpanFacetValues(facet, prefix, activeTags);
+}
+
+export function getLogFacetValues(
+  deps: QueryDeps,
+  facet: string,
+  prefix: string,
+  activeTags: readonly ActiveTag[]
+): Effect.Effect<string[], QueryError> {
+  return deps.repository.getLogFacetValues(facet, prefix, activeTags);
 }
 
 export function queryDashboardStats(

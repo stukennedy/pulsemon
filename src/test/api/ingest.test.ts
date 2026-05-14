@@ -65,6 +65,37 @@ describe("POST /api/ingest", () => {
     });
   });
 
+  it("inserts logs through the Effect ingest pipeline", async () => {
+    const res = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "log-effect-1",
+        service: "voice-gateway",
+        level: "error",
+        message: "provider timeout",
+        trace_id: "trace-1",
+        attributes: { provider: "asr" },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as unknown;
+    expect(body).toEqual({ count: 1 });
+
+    const row = ctx.sqlite
+      .prepare("SELECT service, level, message, trace_id, attributes FROM logs WHERE id = ?")
+      .get("log-effect-1") as any;
+
+    expect(row).toEqual({
+      service: "voice-gateway",
+      level: "error",
+      message: "provider timeout",
+      trace_id: "trace-1",
+      attributes: JSON.stringify({ provider: "asr" }),
+    });
+  });
+
   it("rejects invalid batch records instead of silently dropping them", async () => {
     const res = await ctx.request("/api/ingest/batch", {
       method: "POST",

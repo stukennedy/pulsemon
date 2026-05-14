@@ -5,6 +5,7 @@ import type {
   PatchSpanInput,
   PostConnectionInput,
   PostEventInput,
+  PostLogInput,
   PostMetricInput,
   PostSpanInput,
 } from "./schemas";
@@ -31,6 +32,11 @@ export type MetricInsert = Omit<PostMetricInput, "id" | "timestamp"> & {
   readonly timestamp: string;
 };
 
+export type LogInsert = Omit<PostLogInput, "id" | "timestamp"> & {
+  readonly id: string;
+  readonly timestamp: string;
+};
+
 export type ConnectionUpdate = PatchConnectionInput & {
   readonly id: string;
 };
@@ -46,6 +52,7 @@ export interface TelemetryBatchWrite {
   readonly spanUpdates: readonly SpanUpdate[];
   readonly events: readonly EventInsert[];
   readonly metrics: readonly MetricInsert[];
+  readonly logs: readonly LogInsert[];
 }
 
 export interface TelemetryRepository {
@@ -55,6 +62,7 @@ export interface TelemetryRepository {
   readonly updateSpan: (id: string, input: PatchSpanInput) => Effect.Effect<void, DatabaseError>;
   readonly insertEvents: (input: readonly EventInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly insertMetrics: (input: readonly MetricInsert[]) => Effect.Effect<void, DatabaseError>;
+  readonly insertLogs: (input: readonly LogInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly writeBatch: (input: TelemetryBatchWrite) => Effect.Effect<void, DatabaseError>;
 }
 
@@ -180,6 +188,24 @@ function bindMetricInsert(db: D1Database, input: MetricInsert) {
   );
 }
 
+function bindLogInsert(db: D1Database, input: LogInsert) {
+  return db.prepare(
+    `INSERT INTO logs (id, timestamp, level, service, message, trace_id, span_id, connection_id, attributes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO NOTHING`
+  ).bind(
+    input.id,
+    input.timestamp,
+    input.level,
+    input.service,
+    input.message,
+    input.trace_id ?? null,
+    input.span_id ?? null,
+    input.connection_id ?? null,
+    optionalJson(input.attributes)
+  );
+}
+
 export function makeD1TelemetryRepository(db: D1Database): TelemetryRepository {
   return {
     insertConnection: (input) => dbEffect(() => bindConnectionInsert(db, input).run()).pipe(
@@ -210,6 +236,10 @@ export function makeD1TelemetryRepository(db: D1Database): TelemetryRepository {
       db.batch(input.map((metric) => bindMetricInsert(db, metric)))
     ).pipe(Effect.asVoid),
 
+    insertLogs: (input) => dbEffect(() =>
+      db.batch(input.map((log) => bindLogInsert(db, log)))
+    ).pipe(Effect.asVoid),
+
     writeBatch: (input) => {
       const stmts: D1PreparedStatement[] = [
         ...input.connections.map((conn) => bindConnectionInsert(db, conn)),
@@ -224,6 +254,7 @@ export function makeD1TelemetryRepository(db: D1Database): TelemetryRepository {
         }),
         ...input.events.map((event) => bindEventInsert(db, event)),
         ...input.metrics.map((metric) => bindMetricInsert(db, metric)),
+        ...input.logs.map((log) => bindLogInsert(db, log)),
       ];
 
       return dbEffect(() => db.batch(stmts)).pipe(Effect.asVoid);

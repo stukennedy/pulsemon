@@ -74,6 +74,19 @@ export const PostMetricInputSchema = Schema.Struct({
 });
 export type PostMetricInput = Schema.Schema.Type<typeof PostMetricInputSchema>;
 
+export const PostLogInputSchema = Schema.Struct({
+  id: OptionalString,
+  timestamp: OptionalString,
+  level: Schema.NonEmptyString,
+  service: Schema.NonEmptyString,
+  message: Schema.NonEmptyString,
+  trace_id: OptionalString,
+  span_id: OptionalString,
+  connection_id: OptionalString,
+  attributes: OptionalUnknown,
+});
+export type PostLogInput = Schema.Schema.Type<typeof PostLogInputSchema>;
+
 export const BatchInputSchema = Schema.Struct({
   connections: Schema.optional(Schema.Array(PostConnectionInputSchema)),
   connection_updates: Schema.optional(Schema.Array(Schema.Struct({
@@ -95,5 +108,6 @@ export const BatchInputSchema = Schema.Struct({
   }))),
   events: Schema.optional(Schema.Array(PostEventInputSchema)),
   metrics: Schema.optional(Schema.Array(PostMetricInputSchema)),
+  logs: Schema.optional(Schema.Array(PostLogInputSchema)),
 });
 export type BatchInput = Schema.Schema.Type<typeof BatchInputSchema>;

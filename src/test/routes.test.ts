@@ -32,6 +32,14 @@ describe("Page routes", () => {
     expect(html).toContain("Traces");
   });
 
+  it("GET /logs returns logs page", async () => {
+    const res = await ctx.request("/logs");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Logs");
+    expect(html).toContain("ws-container");
+  });
+
   it("GET /voice returns voice pipeline page", async () => {
     const res = await ctx.request("/voice");
     expect(res.status).toBe(200);

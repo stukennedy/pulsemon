@@ -42,6 +42,18 @@ export const events = sqliteTable("events", {
   size_bytes: integer("size_bytes"),
 });
 
+export const logs = sqliteTable("logs", {
+  id: text("id").primaryKey(),
+  timestamp: text("timestamp").notNull().default(sql`(datetime('now'))`),
+  level: text("level").notNull(),
+  service: text("service").notNull(),
+  message: text("message").notNull(),
+  trace_id: text("trace_id"),
+  span_id: text("span_id"),
+  connection_id: text("connection_id"),
+  attributes: text("attributes"),
+});
+
 export const metrics = sqliteTable("metrics", {
   id: text("id").primaryKey(),
   service: text("service").notNull(),
@@ -55,4 +67,5 @@ export const metrics = sqliteTable("metrics", {
 export type Connection = typeof connections.$inferSelect;
 export type Span = typeof spans.$inferSelect;
 export type Event = typeof events.$inferSelect;
+export type LogRecord = typeof logs.$inferSelect;
 export type Metric = typeof metrics.$inferSelect;

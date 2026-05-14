@@ -1,6 +1,14 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { createTestContext, type TestContext } from "../helpers";
-import { queryConnections, getConnectionDetail, querySpans, getTraceSpans, getConnectionFacetValues } from "@/lib/facets";
+import {
+  getConnectionDetail,
+  getConnectionFacetValues,
+  getLogFacetValues,
+  getTraceSpans,
+  queryConnections,
+  queryLogs,
+  querySpans,
+} from "@/lib/facets";
 
 describe("facets", () => {
   let ctx: TestContext;
@@ -79,6 +87,17 @@ describe("facets", () => {
     });
   });
 
+  describe("queryLogs", () => {
+    it("filters by log level", async () => {
+      ctx.seedLog({ level: "info", message: "session opened" });
+      ctx.seedLog({ level: "error", message: "provider timeout" });
+
+      const { logs, total } = await queryLogs(ctx.d1, [{ facet: "level", value: "error" }]);
+      expect(total).toBe(1);
+      expect(logs[0].message).toBe("provider timeout");
+    });
+  });
+
   describe("getTraceSpans", () => {
     it("returns spans for a trace", async () => {
       ctx.seedSpan({ trace_id: "t1", operation: "a" });
@@ -108,6 +127,17 @@ describe("facets", () => {
 
       const values = await getConnectionFacetValues(ctx.d1, "service", "alp", []);
       expect(values).toEqual(["alpha"]);
+    });
+  });
+
+  describe("getLogFacetValues", () => {
+    it("returns unique log level values", async () => {
+      ctx.seedLog({ level: "info" });
+      ctx.seedLog({ level: "error" });
+      ctx.seedLog({ level: "error" });
+
+      const values = await getLogFacetValues(ctx.d1, "level", "", []);
+      expect(values.sort()).toEqual(["error", "info"]);
     });
   });
 });

@@ -3,6 +3,7 @@ import type { FC } from "hono/jsx";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: "◉" },
   { href: "/connections", label: "Connections", icon: "⇌" },
+  { href: "/logs", label: "Logs", icon: "≡" },
   { href: "/traces", label: "Traces", icon: "⋮" },
   { href: "/voice", label: "Voice", icon: "◎" },
 ];

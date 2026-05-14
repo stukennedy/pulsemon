@@ -13,6 +13,7 @@ import {
   postBatch as postBatchEffect,
   postConnection as postConnectionEffect,
   postEvents as postEventsEffect,
+  postLogs as postLogsEffect,
   postMetrics as postMetricsEffect,
   postSpan as postSpanEffect,
   type IngestDeps,
@@ -84,6 +85,13 @@ export const postMetrics = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
     readJson(c).pipe(Effect.flatMap((body) => postMetricsEffect(deps(c), body))),
+    201
+  );
+
+export const postLogs = (c: Context<{ Bindings: Env }>) =>
+  runJson(
+    c,
+    readJson(c).pipe(Effect.flatMap((body) => postLogsEffect(deps(c), body))),
     201
   );
 

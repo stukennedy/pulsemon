@@ -1,4 +1,4 @@
-export type { Connection, Span, Event, Metric } from "@/db/schema";
+export type { Connection, Span, Event, LogRecord, Metric } from "@/db/schema";
 
 export interface Facet {
   name: string;

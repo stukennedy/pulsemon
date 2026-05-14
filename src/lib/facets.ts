@@ -1,8 +1,8 @@
 import { drizzle } from "drizzle-orm/d1";
 import { asc, desc, count, sql, and, or, eq } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm/column";
-import { connections, spans, events } from "@/db/schema";
-import type { Connection, Span, Event } from "@/db/schema";
+import { connections, spans, events, logs } from "@/db/schema";
+import type { Connection, Span, Event, LogRecord } from "@/db/schema";
 import type { ActiveTag } from "@/types";
 
 type FacetDefinition = {
@@ -28,8 +28,17 @@ export const SPAN_FACETS = [
   { name: "trace", field: "trace_id", col: spans.trace_id },
 ];
 
+export const LOG_FACETS = [
+  { name: "service", field: "service", col: logs.service },
+  { name: "level", field: "level", col: logs.level },
+  { name: "trace", field: "trace_id", col: logs.trace_id },
+  { name: "span", field: "span_id", col: logs.span_id },
+  { name: "connection", field: "connection_id", col: logs.connection_id },
+];
+
 export const CONNECTION_FACET_NAMES = CONNECTION_FACETS.map((f) => f.name);
 export const SPAN_FACET_NAMES = SPAN_FACETS.map((f) => f.name);
+export const LOG_FACET_NAMES = LOG_FACETS.map((f) => f.name);
 
 function buildConditions(activeTags: ActiveTag[], facets: readonly FacetDefinition[]) {
   const byFacet = new Map<string, ActiveTag[]>();
@@ -68,6 +77,10 @@ export function buildConnectionConditions(tags: ActiveTag[]) {
 
 export function buildSpanConditions(tags: ActiveTag[]) {
   return buildConditions(tags, SPAN_FACETS);
+}
+
+export function buildLogConditions(tags: ActiveTag[]) {
+  return buildConditions(tags, LOG_FACETS);
 }
 
 export async function getConnectionFacetValues(
@@ -164,9 +177,60 @@ export async function querySpans(
   return { spans: rows, total };
 }
 
+export async function queryLogs(
+  d1: D1Database,
+  activeTags: ActiveTag[],
+  limit = 100,
+  offset = 0
+): Promise<{ logs: LogRecord[]; total: number }> {
+  const db = drizzle(d1);
+  const conditions = buildLogConditions(activeTags);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ total }] = await db.select({ total: count() }).from(logs).where(where);
+
+  const rows = await db
+    .select()
+    .from(logs)
+    .where(where)
+    .orderBy(desc(logs.timestamp))
+    .limit(limit)
+    .offset(offset);
+
+  return { logs: rows, total };
+}
+
 export async function getTraceSpans(d1: D1Database, traceId: string): Promise<Span[]> {
   const db = drizzle(d1);
   return db.select().from(spans).where(eq(spans.trace_id, traceId)).orderBy(asc(spans.started_at));
+}
+
+export async function getLogFacetValues(
+  d1: D1Database,
+  facet: string,
+  prefix: string,
+  activeTags: ActiveTag[]
+): Promise<string[]> {
+  const f = LOG_FACETS.find((x) => x.name === facet);
+  if (!f) return [];
+
+  const db = drizzle(d1);
+  const conditions = buildLogConditions(activeTags);
+
+  if (prefix) {
+    conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const result = await db
+    .selectDistinct({ val: sql<string>`CAST(${f.col} AS TEXT)` })
+    .from(logs)
+    .where(where)
+    .orderBy(asc(sql`CAST(${f.col} AS TEXT)`))
+    .limit(50);
+
+  return result.map((r) => r.val).filter(Boolean);
 }
 
 export async function getSpanFacetValues(
