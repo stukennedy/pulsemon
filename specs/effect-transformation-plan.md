@@ -136,3 +136,5 @@ Expected outcomes:
 - 2026-05-14: added first-pass realtime voice and agent records:
   `voice_turns` for VAD/transcript/latency/token/cost state, and
   `agent_tool_calls` for tool execution, retries, inputs, outputs, and errors.
+- 2026-05-14: started production controls with optional UI/read API Basic auth
+  and configurable ingest payload size limits.

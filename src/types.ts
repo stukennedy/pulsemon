@@ -22,4 +22,6 @@ export interface Env {
   DB: D1Database;
   SEARCH_SESSION: DurableObjectNamespace;
   INGEST_API_KEY?: string;
+  INGEST_MAX_BYTES?: string;
+  UI_BASIC_AUTH?: string;
 }

@@ -91,4 +91,33 @@ describe("Page routes", () => {
     const html = await res.text();
     expect(html).toContain("Active Connections");
   });
+
+  it("optionally protects UI routes with basic auth", async () => {
+    ctx = createTestContext({ env: { UI_BASIC_AUTH: "admin:secret" } });
+
+    const unauthorized = await ctx.request("/");
+    expect(unauthorized.status).toBe(401);
+    expect(unauthorized.headers.get("WWW-Authenticate")).toContain("Basic");
+
+    const authorized = await ctx.request("/", {
+      headers: { Authorization: `Basic ${btoa("admin:secret")}` },
+    });
+    expect(authorized.status).toBe(200);
+    expect(await authorized.text()).toContain("Dashboard");
+  });
+
+  it("does not apply optional UI basic auth to ingest routes", async () => {
+    ctx = createTestContext({ env: { UI_BASIC_AUTH: "admin:secret" } });
+
+    const res = await ctx.request("/api/ingest/connections", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ service: "voice-gateway", connection_type: "ws" }),
+    });
+
+    expect(res.status).toBe(201);
+  });
 });

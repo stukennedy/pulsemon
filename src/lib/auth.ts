@@ -18,3 +18,24 @@ export function checkApiKey(c: Context<{ Bindings: Env }>): Response | null {
   }
   return null;
 }
+
+export function checkUiAuth(c: Context<{ Bindings: Env }>): Response | null {
+  const expected = c.env.UI_BASIC_AUTH;
+  if (!expected) return null;
+
+  const path = new URL(c.req.url).pathname;
+  if (path.startsWith("/api/ingest")) return null;
+
+  const auth = c.req.header("Authorization") ?? "";
+  const encoded = auth.startsWith("Basic ") ? auth.slice(6).trim() : "";
+  const credentials = encoded ? atob(encoded) : "";
+
+  if (credentials === expected) return null;
+
+  return new Response("Unauthorized", {
+    status: 401,
+    headers: {
+      "WWW-Authenticate": 'Basic realm="pulsemon"',
+    },
+  });
+}

@@ -4,6 +4,7 @@ import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import {
   errorStatus,
+  PayloadTooLargeError,
   ValidationError,
   type IngestError,
 } from "@/lib/effect/errors";
@@ -46,10 +47,39 @@ function otlpDeps(c: Context<{ Bindings: Env }>): OtlpDeps {
   };
 }
 
-function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, ValidationError> {
-  return Effect.tryPromise({
-    try: () => c.req.json() as Promise<unknown>,
-    catch: () => new ValidationError({ message: "Invalid JSON" }),
+const DEFAULT_INGEST_MAX_BYTES = 1_000_000;
+
+function maxBodyBytes(c: Context<{ Bindings: Env }>) {
+  const configured = Number(c.env.INGEST_MAX_BYTES ?? DEFAULT_INGEST_MAX_BYTES);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_INGEST_MAX_BYTES;
+}
+
+function byteLength(value: string) {
+  return new TextEncoder().encode(value).byteLength;
+}
+
+function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, ValidationError | PayloadTooLargeError> {
+  return Effect.gen(function* () {
+    const maxBytes = maxBodyBytes(c);
+    const contentLength = Number(c.req.header("content-length") ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      return yield* Effect.fail(new PayloadTooLargeError({ message: `Payload exceeds ${maxBytes} bytes` }));
+    }
+
+    const text = yield* Effect.tryPromise({
+      try: () => c.req.text(),
+      catch: () => new ValidationError({ message: "Invalid body" }),
+    });
+
+    if (byteLength(text) > maxBytes) {
+      return yield* Effect.fail(new PayloadTooLargeError({ message: `Payload exceeds ${maxBytes} bytes` }));
+    }
+
+    try {
+      return JSON.parse(text) as unknown;
+    } catch {
+      return yield* Effect.fail(new ValidationError({ message: "Invalid JSON" }));
+    }
   });
 }
 

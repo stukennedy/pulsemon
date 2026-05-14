@@ -25,6 +25,24 @@ describe("POST /api/ingest", () => {
     expect(body).toEqual({ error: "Unauthorized" });
   });
 
+  it("rejects ingest payloads over the configured byte limit", async () => {
+    ctx = createTestContext({ env: { INGEST_MAX_BYTES: "20" } });
+
+    const res = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        service: "voice-gateway",
+        level: "info",
+        message: "this payload is intentionally too large",
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Payload exceeds");
+  });
+
   it("validates required connection fields", async () => {
     const res = await ctx.request("/api/ingest/connections", {
       method: "POST",

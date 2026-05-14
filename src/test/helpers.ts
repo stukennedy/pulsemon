@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { Database } from "bun:sqlite";
 import { loadRoutes } from "@/router";
 import { loadLayouts } from "@/layouts";
+import { checkUiAuth } from "@/lib/auth";
 import type { Env } from "@/types";
 import { readFileSync, readdirSync } from "fs";
 import path from "path";
@@ -76,7 +77,11 @@ export interface TestContext {
   }>) => void;
 }
 
-export function createTestContext(): TestContext {
+export interface TestContextOptions {
+  env?: Partial<Env>;
+}
+
+export function createTestContext(options: TestContextOptions = {}): TestContext {
   const sqlite = new Database(":memory:");
   sqlite.exec("PRAGMA journal_mode = WAL");
 
@@ -96,7 +101,14 @@ export function createTestContext(): TestContext {
         idFromName: () => ({ toString: () => "test-id" }),
         get: () => ({ fetch: () => new Response("ws mock", { status: 101 }) }),
       },
+      ...options.env,
     };
+    await next();
+  });
+
+  app.use("*", async (c, next) => {
+    const authResponse = checkUiAuth(c);
+    if (authResponse) return authResponse;
     await next();
   });
 

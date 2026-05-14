@@ -72,6 +72,17 @@ For a deployed Worker, set the secret:
 wrangler secret put INGEST_API_KEY
 ```
 
+Optional production controls:
+
+```bash
+wrangler secret put UI_BASIC_AUTH   # value format: username:password
+wrangler secret put INGEST_MAX_BYTES
+```
+
+`UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
+`INGEST_MAX_BYTES` defaults to `1000000` bytes and rejects oversized ingest
+payloads before decoding JSON.
+
 ### Minimal connection example
 
 This records a WebSocket session with two message events and then closes the
