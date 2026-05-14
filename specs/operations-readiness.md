@@ -65,6 +65,13 @@ Restore options:
 - Prefer Cloudflare D1 Time Travel for point-in-time restore or fork.
 - For SQL exports, restore into a fresh D1 database with `wrangler d1 execute`
   and move traffic only after smoke checks pass.
+- Validate the current migration set and any exported SQL before relying on the
+  backup:
+
+```bash
+bun run restore:check
+bun run restore:check backups/pulsemon-202605141200.sql
+```
 
 Useful D1 checks:
 
@@ -72,6 +79,14 @@ Useful D1 checks:
 wrangler d1 info pulsemon-db --remote
 wrangler d1 insights pulsemon-db --remote
 ```
+
+Restore drill pass criteria:
+
+- All ordered migrations apply cleanly to an empty database.
+- The exported SQL imports without parser or constraint errors.
+- Required observability tables are present.
+- Smoke checks pass against the restored database before traffic is moved.
+- Any orphaned trace/log correlation warnings are triaged and accepted or fixed.
 
 ## Smoke And Load Checks
 
@@ -93,6 +108,28 @@ bun run load:ingest
 
 Track request failure rate, p95 latency, D1 size, and alert webhook delivery
 after each load run.
+
+`bun run capacity:check` sends a gated load run and verifies metric readback:
+
+```bash
+PULSEMON_URL=https://pulsemon.example.com \
+PULSEMON_KEY=<ingest-key> \
+PULSEMON_BASIC_AUTH=admin:secret \
+PULSEMON_CAPACITY_REQUESTS=1000 \
+PULSEMON_CAPACITY_BATCH_SIZE=50 \
+PULSEMON_CAPACITY_CONCURRENCY=10 \
+PULSEMON_CAPACITY_MAX_FAILURE_RATE=0 \
+PULSEMON_CAPACITY_MAX_P95_MS=1000 \
+PULSEMON_CAPACITY_MIN_RPS=25 \
+bun run capacity:check
+```
+
+Capacity gate pass criteria:
+
+- Failure rate is at or below `PULSEMON_CAPACITY_MAX_FAILURE_RATE`.
+- p95 ingest latency is below `PULSEMON_CAPACITY_MAX_P95_MS` when set.
+- Throughput is above `PULSEMON_CAPACITY_MIN_RPS` when set.
+- Metric readback returns samples for the generated capacity run.
 
 ## OpenTelemetry Collector
 
@@ -128,9 +165,9 @@ the configured endpoint.
 These are not blockers for a controlled platform-team rollout, but they remain
 before calling Pulsemon a broad Datadog replacement:
 
-- SSO/SAML/OIDC and team/group policy mapping.
-- User-managed monitor definitions and UI editing.
-- Notification provider integrations beyond webhook.
-- Multi-region disaster recovery and tested restore drills.
-- Formal compatibility suite against multiple OpenTelemetry SDK/Collector
-  versions.
+- Full OIDC login/callback/session flow beyond the current policy-mapping
+  groundwork.
+- Multi-region disaster recovery automation beyond D1 export, Time Travel, and
+  restore validation drills.
+- Live certification rows for the exact OpenTelemetry SDK and Collector
+  versions adopted by each platform team.

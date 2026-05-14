@@ -530,6 +530,8 @@ bun run build      # Production build
 bun run dev        # Dev server on :8788
 bun run routes     # Regenerate router after adding routes
 bun run load:ingest # Configurable ingest load test
+bun run capacity:check # Gated ingest/readback capacity check
+bun run restore:check  # Validate migrations or an exported SQL restore
 bun run smoke      # Ingest/query smoke check against a running deployment
 ```
 
@@ -537,6 +539,16 @@ bun run smoke      # Ingest/query smoke check against a running deployment
 `PULSEMON_URL=http://localhost:8788`. Tune it with
 `PULSEMON_LOAD_REQUESTS`, `PULSEMON_LOAD_BATCH_SIZE`, and
 `PULSEMON_LOAD_CONCURRENCY`.
+
+`capacity:check` requires `PULSEMON_KEY`, sends a gated ingest run, and verifies
+metric readback. Tune it with `PULSEMON_CAPACITY_REQUESTS`,
+`PULSEMON_CAPACITY_BATCH_SIZE`, `PULSEMON_CAPACITY_CONCURRENCY`,
+`PULSEMON_CAPACITY_MAX_FAILURE_RATE`, `PULSEMON_CAPACITY_MAX_P95_MS`, and
+`PULSEMON_CAPACITY_MIN_RPS`.
+
+`restore:check` validates that ordered migrations apply to an empty database.
+Pass an exported SQL file path to also validate import into a fresh local
+database.
 
 `smoke` requires `PULSEMON_KEY` and defaults to
 `PULSEMON_URL=http://localhost:8788`. Set `PULSEMON_BASIC_AUTH=username:password`

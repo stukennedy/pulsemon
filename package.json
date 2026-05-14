@@ -14,6 +14,8 @@
     "db:migrate": "wrangler d1 migrations apply pulsemon-db",
     "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql",
     "load:ingest": "bun scripts/load-ingest.ts",
+    "capacity:check": "bun scripts/capacity-check.ts",
+    "restore:check": "bun scripts/restore-check.ts",
     "smoke": "bun scripts/smoke.ts"
   },
   "dependencies": {

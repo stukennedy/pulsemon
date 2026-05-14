@@ -87,7 +87,8 @@ Prepare for real deployments.
 - CI for typecheck, tests, build, migrations, and route generation drift.
 - Staging/prod environment docs and migration workflow.
 - Backup/restore and D1 capacity guidance.
-- Load tests for ingest pressure, query latency, and retention maintenance.
+- Load and capacity-gate scripts for ingest pressure, readback, and threshold
+  decisions.
 - Synthetic smoke checks for ingest, query, UI auth, and scheduled maintenance.
 
 ### 7. Governance And Safety
@@ -149,3 +150,6 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: started enterprise gap closure by replacing hardcoded-only
   monitor rules with persisted monitor definitions, admin monitor APIs, and a
   custom metric monitor creation path.
+- 2026-05-14: added `bun run restore:check` and `bun run capacity:check` for
+  restore validation, ingest/readback capacity gates, and documented rollout
+  criteria.

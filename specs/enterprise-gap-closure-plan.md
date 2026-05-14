@@ -76,3 +76,5 @@ ordered D1 SQL migration, and run the full test suite.
 - 2026-05-14: added repo-owned OTLP JSON/protobuf/gzip fixtures, routed OTLP
   tests through those fixtures, and documented the compatibility matrix plus
   rollout certification checklist.
+- 2026-05-14: added restore validation and capacity gate scripts with
+  documented restore drill criteria, capacity thresholds, and rollout gates.
