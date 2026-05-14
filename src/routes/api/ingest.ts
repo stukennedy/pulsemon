@@ -18,11 +18,27 @@ import {
   postSpan as postSpanEffect,
   type IngestDeps,
 } from "@/lib/effect/ingest";
+import {
+  postOtlpLogs as postOtlpLogsEffect,
+  postOtlpMetrics as postOtlpMetricsEffect,
+  postOtlpTraces as postOtlpTracesEffect,
+  type OtlpDeps,
+} from "@/lib/effect/otlp";
 import { makeD1TelemetryRepository } from "@/lib/effect/repository";
 
 function deps(c: Context<{ Bindings: Env }>): IngestDeps {
+  const repository = makeD1TelemetryRepository(c.env.DB);
   return {
-    repository: makeD1TelemetryRepository(c.env.DB),
+    repository,
+    expectedApiKey: c.env.INGEST_API_KEY,
+    authorization: c.req.header("Authorization") ?? "",
+  };
+}
+
+function otlpDeps(c: Context<{ Bindings: Env }>): OtlpDeps {
+  const repository = makeD1TelemetryRepository(c.env.DB);
+  return {
+    repository,
     expectedApiKey: c.env.INGEST_API_KEY,
     authorization: c.req.header("Authorization") ?? "",
   };
@@ -99,5 +115,26 @@ export const postBatch = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
     readJson(c).pipe(Effect.flatMap((body) => postBatchEffect(deps(c), body))),
+    201
+  );
+
+export const postOtlpTraces = (c: Context<{ Bindings: Env }>) =>
+  runJson(
+    c,
+    readJson(c).pipe(Effect.flatMap((body) => postOtlpTracesEffect(otlpDeps(c), body))),
+    201
+  );
+
+export const postOtlpMetrics = (c: Context<{ Bindings: Env }>) =>
+  runJson(
+    c,
+    readJson(c).pipe(Effect.flatMap((body) => postOtlpMetricsEffect(otlpDeps(c), body))),
+    201
+  );
+
+export const postOtlpLogs = (c: Context<{ Bindings: Env }>) =>
+  runJson(
+    c,
+    readJson(c).pipe(Effect.flatMap((body) => postOtlpLogsEffect(otlpDeps(c), body))),
     201
   );

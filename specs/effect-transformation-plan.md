@@ -130,3 +130,6 @@ Expected outcomes:
 - 2026-05-14: added metrics as a queryable signal with recent samples, grouped
   summaries, typed Effect query access, `/metrics` UI/API routes, websocket
   filtering, and documentation.
+- 2026-05-14: added OTLP-compatible JSON ingest routes for traces, metrics, and
+  logs. These translate common OTLP export payloads into native spans, metric
+  samples, and log records through the Effect repository boundary.

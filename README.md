@@ -215,6 +215,21 @@ curl -s "$PULSEMON_URL/api/ingest/metrics" \
 
 Open `/metrics` to filter metrics by `service`, `name`, or `type`.
 
+### OTLP-compatible JSON ingest
+
+Pulsemon also accepts the common OTLP JSON export shapes and translates them
+into its native signals:
+
+```bash
+curl -s "$PULSEMON_URL/api/ingest/otlp/v1/traces" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d @traces.json
+```
+
+The supported OTLP routes are `/api/ingest/otlp/v1/traces`,
+`/api/ingest/otlp/v1/metrics`, and `/api/ingest/otlp/v1/logs`.
+
 ### Instrumenting an app
 
 A small wrapper is enough for most services:
@@ -302,6 +317,9 @@ For high-volume services, buffer records and flush them through
 | `POST` | `/api/ingest/metrics` | Record one metric or up to 500 metrics |
 | `POST` | `/api/ingest/logs` | Record one log or up to 1000 logs |
 | `POST` | `/api/ingest/batch` | Record up to 1000 mixed operations |
+| `POST` | `/api/ingest/otlp/v1/traces` | Translate OTLP JSON traces into spans |
+| `POST` | `/api/ingest/otlp/v1/metrics` | Translate OTLP JSON metrics into samples |
+| `POST` | `/api/ingest/otlp/v1/logs` | Translate OTLP JSON logs into log records |
 
 `connections` and `spans` inserts are idempotent by `id`: duplicate IDs are
 ignored. Use the `PATCH` endpoints when a connection or span changes state after
