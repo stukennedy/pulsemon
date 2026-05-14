@@ -82,3 +82,5 @@ ordered D1 SQL migration, and run the full test suite.
   auth audit events.
 - 2026-05-14: added native metric distribution detail columns and OTLP
   translation for histogram buckets and summary quantiles.
+- 2026-05-14: added a primary/standby DR readiness script for ingest,
+  readback, and authenticated API checks.

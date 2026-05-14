@@ -157,3 +157,5 @@ Control risk in high-volume, multi-team telemetry.
   signed UI cookies, logout, and auth audit events.
 - 2026-05-14: added metric distribution details for histograms and summaries,
   including OTLP bucket and quantile translation.
+- 2026-05-14: added `bun run dr:check` for primary/standby DR readiness checks
+  across ingest, metric readback, and authenticated read APIs.

@@ -540,6 +540,7 @@ bun run dev        # Dev server on :8788
 bun run routes     # Regenerate router after adding routes
 bun run load:ingest # Configurable ingest load test
 bun run capacity:check # Gated ingest/readback capacity check
+bun run dr:check       # Primary/standby DR readiness check
 bun run restore:check  # Validate migrations or an exported SQL restore
 bun run smoke      # Ingest/query smoke check against a running deployment
 ```
@@ -558,6 +559,11 @@ metric readback. Tune it with `PULSEMON_CAPACITY_REQUESTS`,
 `restore:check` validates that ordered migrations apply to an empty database.
 Pass an exported SQL file path to also validate import into a fresh local
 database.
+
+`dr:check` validates a primary and standby deployment by writing a small
+readiness metric/log to both endpoints and checking readback/API health. Set
+`PULSEMON_DR_PRIMARY_URL`, `PULSEMON_DR_STANDBY_URL`, and either shared
+`PULSEMON_KEY`/`PULSEMON_BASIC_AUTH` or endpoint-specific key/auth variables.
 
 `smoke` requires `PULSEMON_KEY` and defaults to
 `PULSEMON_URL=http://localhost:8788`. Set `PULSEMON_BASIC_AUTH=username:password`

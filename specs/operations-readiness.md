@@ -90,6 +90,39 @@ Restore drill pass criteria:
 - Smoke checks pass against the restored database before traffic is moved.
 - Any orphaned trace/log correlation warnings are triaged and accepted or fixed.
 
+## Multi-Region Readiness
+
+Deploy a standby Worker and D1 database with the same migrations, secrets, and
+bindings as production. Use `bun run dr:check` before a planned cutover and
+after any restore into the standby database:
+
+```bash
+PULSEMON_DR_PRIMARY_URL=https://pulsemon.example.com \
+PULSEMON_DR_STANDBY_URL=https://pulsemon-standby.example.com \
+PULSEMON_KEY=<shared-ingest-key> \
+PULSEMON_BASIC_AUTH=admin:secret \
+bun run dr:check
+```
+
+Use endpoint-specific credentials when primary and standby use different
+secrets:
+
+```bash
+PULSEMON_DR_PRIMARY_KEY=<primary-ingest-key> \
+PULSEMON_DR_STANDBY_KEY=<standby-ingest-key> \
+PULSEMON_DR_PRIMARY_BASIC_AUTH=admin:primary \
+PULSEMON_DR_STANDBY_BASIC_AUTH=admin:standby \
+bun run dr:check
+```
+
+DR cutover pass criteria:
+
+- Primary and standby both accept ingest writes.
+- Primary and standby both return metric readback for the generated DR metric.
+- Primary and standby read APIs return successfully under configured UI auth.
+- The standby deployment has passed `bun run smoke`, `bun run capacity:check`,
+  and `bun run restore:check <export.sql>` for the restored export.
+
 ## Smoke And Load Checks
 
 `bun run smoke` writes a connection, span, log, and metric through
@@ -167,7 +200,5 @@ the configured endpoint.
 These are not blockers for a controlled platform-team rollout, but they remain
 before calling Pulsemon a broad Datadog replacement:
 
-- Multi-region disaster recovery automation beyond D1 export, Time Travel, and
-  restore validation drills.
 - Live certification rows for the exact OpenTelemetry SDK and Collector
   versions adopted by each platform team.
