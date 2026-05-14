@@ -92,6 +92,7 @@ wrangler secret put INGEST_REDACT_KEYS
 wrangler secret put INGEST_ATTRIBUTE_DENY_KEYS
 wrangler secret put INGEST_ATTRIBUTE_ALLOW_KEYS
 wrangler secret put INGEST_MAX_ATTRIBUTE_KEYS
+wrangler secret put INGEST_CARDINALITY_MAX_VALUES_PER_KEY
 wrangler secret put DEFAULT_WORKSPACE_ID
 wrangler secret put DEFAULT_PROJECT_ID
 wrangler secret put MAINTENANCE_API_KEY
@@ -157,9 +158,15 @@ INGEST_ATTRIBUTE_DENY_KEYS=raw_audio,debug_payload
 INGEST_ATTRIBUTE_ALLOW_KEYS=provider,model,region,session_id
 INGEST_MAX_ATTRIBUTE_KEYS=100
 INGEST_MAX_ATTRIBUTE_VALUE_LENGTH=4096
+INGEST_CARDINALITY_MAX_VALUES_PER_KEY=0
 INGEST_REDACT_TEXT=true
 INGEST_REDACTION_DISABLED=false
 ```
+
+`INGEST_CARDINALITY_MAX_VALUES_PER_KEY` is disabled at `0`. When set, Pulsemon
+keeps a per-workspace/project/scope ledger of unique structured attribute/tag
+values and rejects ingest that would exceed the configured unique-value budget
+for a key such as `metrics.tags.provider` or `agent_tool_calls.input.customer_id`.
 
 Monitor evaluations are available at `/monitors` and `/api/monitors`. They
 currently cover ASR/LLM/TTS p95 latency, voice interruption rate, agent tool

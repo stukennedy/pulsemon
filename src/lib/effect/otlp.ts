@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import type { TenantScope } from "@/types";
 import { authorizeIngest, type ApiKeyContext } from "./auth";
+import type { IngestCardinalityController } from "./cardinality";
 import {
   PayloadTooLargeError,
   ValidationError,
@@ -36,6 +37,7 @@ export interface OtlpDeps {
   readonly defaultTenant: TenantScope;
   readonly pressure?: IngestPressureController;
   readonly governance?: IngestGovernanceConfig;
+  readonly cardinality?: IngestCardinalityController;
 }
 
 type OtlpRecord = Record<string, unknown>;
@@ -65,6 +67,16 @@ function preparePressure(
 
 function governanceConfig(deps: OtlpDeps) {
   return deps.governance ?? DEFAULT_INGEST_GOVERNANCE_CONFIG;
+}
+
+function enforceCardinality(
+  deps: OtlpDeps,
+  context: ApiKeyContext,
+  batch: TelemetryBatchWrite
+): Effect.Effect<void, IngestError> {
+  return deps.cardinality
+    ? deps.cardinality.enforce(context, deps.requiredScope, batch)
+    : Effect.void;
 }
 
 function metricCountResult(count: number, sampledOut: number) {
@@ -369,7 +381,9 @@ export function postOtlpTraces(
     yield* preparePressure(deps, auth);
     const spans = traceSpans(raw, auth, governanceConfig(deps));
     yield* ensureBatchSize(spans.length);
-    yield* deps.repository.writeBatch({ ...emptyBatch(), spans });
+    const batch = { ...emptyBatch(), spans };
+    yield* enforceCardinality(deps, auth, batch);
+    yield* deps.repository.writeBatch(batch);
     return { counts: { spans: spans.length } };
   });
 }
@@ -385,7 +399,9 @@ export function postOtlpMetrics(
     yield* ensureBatchSize(metrics.length);
     const sampled = sampleItems(metrics, pressure, (metric) => metric.id);
     if (sampled.kept.length > 0) {
-      yield* deps.repository.writeBatch({ ...emptyBatch(), metrics: sampled.kept });
+      const batch = { ...emptyBatch(), metrics: sampled.kept };
+      yield* enforceCardinality(deps, auth, batch);
+      yield* deps.repository.writeBatch(batch);
     }
     return metricCountResult(sampled.kept.length, sampled.sampledOut);
   });
@@ -402,7 +418,9 @@ export function postOtlpLogs(
     yield* ensureBatchSize(logs.length);
     const sampled = sampleItems(logs, pressure, (log) => log.id);
     if (sampled.kept.length > 0) {
-      yield* deps.repository.writeBatch({ ...emptyBatch(), logs: sampled.kept });
+      const batch = { ...emptyBatch(), logs: sampled.kept };
+      yield* enforceCardinality(deps, auth, batch);
+      yield* deps.repository.writeBatch(batch);
     }
     return logCountResult(sampled.kept.length, sampled.sampledOut);
   });

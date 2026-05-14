@@ -147,6 +147,17 @@ export const ingest_rate_limits = sqliteTable("ingest_rate_limits", {
   request_count: integer("request_count").notNull().default(0),
 });
 
+export const ingest_cardinality_values = sqliteTable("ingest_cardinality_values", {
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  scope: text("scope").notNull(),
+  signal: text("signal").notNull(),
+  attribute_key: text("attribute_key").notNull(),
+  value_hash: text("value_hash").notNull(),
+  first_seen_at: text("first_seen_at").notNull(),
+  last_seen_at: text("last_seen_at").notNull(),
+});
+
 export const monitor_evaluations = sqliteTable("monitor_evaluations", {
   id: text("id").primaryKey(),
   workspace_id: text("workspace_id").notNull(),
@@ -199,6 +210,7 @@ export type VoiceTurn = typeof voice_turns.$inferSelect;
 export type AgentToolCall = typeof agent_tool_calls.$inferSelect;
 export type MetricRollup1m = typeof metric_rollups_1m.$inferSelect;
 export type IngestRateLimit = typeof ingest_rate_limits.$inferSelect;
+export type IngestCardinalityValue = typeof ingest_cardinality_values.$inferSelect;
 export type MonitorEvaluationRecord = typeof monitor_evaluations.$inferSelect;
 export type AlertIncident = typeof alert_incidents.$inferSelect;
 export type AlertNotification = typeof alert_notifications.$inferSelect;

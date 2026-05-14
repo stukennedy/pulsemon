@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import type { TenantScope } from "@/types";
 import { authorizeIngest, type ApiKeyContext } from "./auth";
+import type { IngestCardinalityController } from "./cardinality";
 import {
   PayloadTooLargeError,
   ValidationError,
@@ -71,6 +72,7 @@ export interface IngestDeps {
   readonly defaultTenant: TenantScope;
   readonly pressure?: IngestPressureController;
   readonly governance?: IngestGovernanceConfig;
+  readonly cardinality?: IngestCardinalityController;
 }
 
 function uuid() {
@@ -118,6 +120,30 @@ function preparePressure(
 
 function governanceConfig(deps: IngestDeps) {
   return deps.governance ?? DEFAULT_INGEST_GOVERNANCE_CONFIG;
+}
+
+function emptyBatch(): TelemetryBatchWrite {
+  return {
+    connections: [],
+    connectionUpdates: [],
+    spans: [],
+    spanUpdates: [],
+    events: [],
+    metrics: [],
+    logs: [],
+    voiceTurns: [],
+    toolCalls: [],
+  };
+}
+
+function enforceCardinality(
+  deps: IngestDeps,
+  context: ApiKeyContext,
+  batch: TelemetryBatchWrite
+): Effect.Effect<void, IngestError> {
+  return deps.cardinality
+    ? deps.cardinality.enforce(context, deps.requiredScope, batch)
+    : Effect.void;
 }
 
 function countResult(count: number, sampledOut: number) {
@@ -401,6 +427,7 @@ export function postConnection(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PostConnectionInputSchema, raw);
     const record = connectionInsert(input, auth, governanceConfig(deps));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), connections: [record] });
     yield* deps.repository.insertConnection(record);
     return { id: record.id };
   });
@@ -416,7 +443,9 @@ export function patchConnection(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PatchConnectionInputSchema, raw);
     yield* ensureConnectionUpdate(input);
-    yield* deps.repository.updateConnection(id, governConnectionUpdate({ ...auth, ...input }, governanceConfig(deps)));
+    const update = governConnectionUpdate({ ...auth, ...input }, governanceConfig(deps));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), connectionUpdates: [{ ...update, id }] });
+    yield* deps.repository.updateConnection(id, update);
     return { id };
   });
 }
@@ -430,6 +459,7 @@ export function postSpan(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PostSpanInputSchema, raw);
     const record = spanInsert(input, auth, governanceConfig(deps));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), spans: [record] });
     yield* deps.repository.insertSpan(record);
     return { id: record.id };
   });
@@ -445,7 +475,9 @@ export function patchSpan(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PatchSpanInputSchema, raw);
     yield* ensureSpanUpdate(input);
-    yield* deps.repository.updateSpan(id, governSpanUpdate({ ...auth, ...input }, governanceConfig(deps)));
+    const update = governSpanUpdate({ ...auth, ...input }, governanceConfig(deps));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), spanUpdates: [{ ...update, id }] });
+    yield* deps.repository.updateSpan(id, update);
     return { id };
   });
 }
@@ -466,6 +498,7 @@ export function postEvents(
     );
     const sampled = sampleItems(items, pressure, eventSamplingKey);
     const records = sampled.kept.map((input) => eventInsert(input, auth, governanceConfig(deps)));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), events: records });
     if (records.length > 0) {
       yield* deps.repository.insertEvents(records);
     }
@@ -489,6 +522,7 @@ export function postMetrics(
     );
     const sampled = sampleItems(items, pressure, metricSamplingKey);
     const records = sampled.kept.map((input) => metricInsert(input, auth, governanceConfig(deps)));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), metrics: records });
     if (records.length > 0) {
       yield* deps.repository.insertMetrics(records);
     }
@@ -512,6 +546,7 @@ export function postLogs(
     );
     const sampled = sampleItems(items, pressure, logSamplingKey);
     const records = sampled.kept.map((input) => logInsert(input, auth, governanceConfig(deps)));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), logs: records });
     if (records.length > 0) {
       yield* deps.repository.insertLogs(records);
     }
@@ -534,6 +569,7 @@ export function postVoiceTurns(
       "Max 500 voice turns per request"
     );
     const records = items.map((input) => voiceTurnInsert(input, auth, governanceConfig(deps)));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), voiceTurns: records });
     yield* deps.repository.insertVoiceTurns(records);
     return { count: records.length };
   });
@@ -554,6 +590,7 @@ export function postAgentToolCalls(
       "Max 500 tool calls per request"
     );
     const records = items.map((input) => agentToolCallInsert(input, auth, governanceConfig(deps)));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), toolCalls: records });
     yield* deps.repository.insertAgentToolCalls(records);
     return { count: records.length };
   });
@@ -580,6 +617,7 @@ export function postBatch(
       return yield* Effect.fail(new PayloadTooLargeError({ message: "Max 1000 operations per batch" }));
     }
 
+    yield* enforceCardinality(deps, auth, batch);
     yield* deps.repository.writeBatch(batch);
     const counts = batchCounts(batch);
     return sampledOut > 0 ? { counts, sampled_out: sampledOut } : { counts };

@@ -153,6 +153,59 @@ describe("POST /api/ingest", () => {
     expect(row.count).toBe(0);
   });
 
+  it("enforces cardinality budgets for metric tags", async () => {
+    ctx = createTestContext({ env: { INGEST_CARDINALITY_MAX_VALUES_PER_KEY: "1" } });
+
+    const first = await ctx.request("/api/ingest/metrics", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "cardinality-metric-1",
+        service: "voice-gateway",
+        metric_name: "voice.latency_ms",
+        metric_type: "histogram",
+        value: 123,
+        tags: { provider: "asr" },
+      }),
+    });
+    expect(first.status).toBe(201);
+
+    const duplicate = await ctx.request("/api/ingest/metrics", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "cardinality-metric-duplicate",
+        service: "voice-gateway",
+        metric_name: "voice.latency_ms",
+        metric_type: "histogram",
+        value: 124,
+        tags: { provider: "asr" },
+      }),
+    });
+    expect(duplicate.status).toBe(201);
+
+    const overBudget = await ctx.request("/api/ingest/metrics", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "cardinality-metric-2",
+        service: "voice-gateway",
+        metric_name: "voice.latency_ms",
+        metric_type: "histogram",
+        value: 125,
+        tags: { provider: "tts" },
+      }),
+    });
+    expect(overBudget.status).toBe(400);
+    const body = await overBudget.json() as { error: string };
+    expect(body.error).toContain("Cardinality budget exceeded for metrics.tags.provider");
+
+    const row = ctx.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM metrics WHERE id = ?")
+      .get("cardinality-metric-2") as any;
+    expect(row.count).toBe(0);
+  });
+
   it("validates required connection fields", async () => {
     const res = await ctx.request("/api/ingest/connections", {
       method: "POST",

@@ -9,6 +9,7 @@ import {
   ValidationError,
   type IngestError,
 } from "@/lib/effect/errors";
+import { makeIngestCardinalityController } from "@/lib/effect/cardinality";
 import {
   patchConnection as patchConnectionEffect,
   patchSpan as patchSpanEffect,
@@ -44,6 +45,7 @@ function deps(c: Context<{ Bindings: Env }>, requiredScope: string): IngestDeps 
     defaultTenant: tenantScopeFromEnv(c.env),
     pressure: makeIngestPressureController(c.env.DB, c.env),
     governance: governanceConfigFromEnv(c.env),
+    cardinality: makeIngestCardinalityController(c.env.DB, c.env),
   };
 }
 
@@ -58,6 +60,7 @@ function otlpDeps(c: Context<{ Bindings: Env }>, requiredScope: string): OtlpDep
     defaultTenant: tenantScopeFromEnv(c.env),
     pressure: makeIngestPressureController(c.env.DB, c.env),
     governance: governanceConfigFromEnv(c.env),
+    cardinality: makeIngestCardinalityController(c.env.DB, c.env),
   };
 }
 
