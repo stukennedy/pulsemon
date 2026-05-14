@@ -22,6 +22,7 @@ import {
   postVoiceTurns as postVoiceTurnsEffect,
   type IngestDeps,
 } from "@/lib/effect/ingest";
+import { governanceConfigFromEnv } from "@/lib/effect/governance";
 import {
   postOtlpLogs as postOtlpLogsEffect,
   postOtlpMetrics as postOtlpMetricsEffect,
@@ -42,6 +43,7 @@ function deps(c: Context<{ Bindings: Env }>, requiredScope: string): IngestDeps 
     requiredScope,
     defaultTenant: tenantScopeFromEnv(c.env),
     pressure: makeIngestPressureController(c.env.DB, c.env),
+    governance: governanceConfigFromEnv(c.env),
   };
 }
 
@@ -55,6 +57,7 @@ function otlpDeps(c: Context<{ Bindings: Env }>, requiredScope: string): OtlpDep
     requiredScope,
     defaultTenant: tenantScopeFromEnv(c.env),
     pressure: makeIngestPressureController(c.env.DB, c.env),
+    governance: governanceConfigFromEnv(c.env),
   };
 }
 

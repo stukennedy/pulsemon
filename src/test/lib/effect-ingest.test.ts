@@ -1,8 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { Effect, Either } from "effect";
 import { DatabaseError } from "@/lib/effect/errors";
+import { DEFAULT_INGEST_GOVERNANCE_CONFIG, type IngestGovernanceConfig } from "@/lib/effect/governance";
 import { postBatch, postConnection } from "@/lib/effect/ingest";
-import type { ConnectionInsert, TelemetryRepository } from "@/lib/effect/repository";
+import type { ConnectionInsert, TelemetryBatchWrite, TelemetryRepository } from "@/lib/effect/repository";
 
 function createRepository(overrides: Partial<TelemetryRepository> = {}): TelemetryRepository {
   return {
@@ -20,13 +21,14 @@ function createRepository(overrides: Partial<TelemetryRepository> = {}): Telemet
   };
 }
 
-function deps(repository: TelemetryRepository) {
+function deps(repository: TelemetryRepository, governance?: IngestGovernanceConfig) {
   return {
     repository,
     expectedApiKey: "test-key",
     authorization: "Bearer test-key",
     requiredScope: "*",
     defaultTenant: { workspace_id: "default", project_id: "default" },
+    governance,
   };
 }
 
@@ -121,5 +123,63 @@ describe("Effect ingest service", () => {
       expect(result.left.message).toBe("No valid records in batch");
     }
     expect(calls).toBe(0);
+  });
+
+  it("applies ingest governance before batch persistence", async () => {
+    let captured: TelemetryBatchWrite | undefined;
+    const repository = createRepository({
+      writeBatch: (input) => Effect.sync(() => {
+        captured = input;
+      }),
+    });
+
+    const result = await Effect.runPromise(postBatch(deps(repository, {
+      ...DEFAULT_INGEST_GOVERNANCE_CONFIG,
+      denyKeys: ["debug_payload"],
+    }), {
+      logs: [{
+        service: "voice-gateway",
+        level: "info",
+        message: "customer user@example.com sent Bearer abc123",
+        attributes: {
+          authorization: "Bearer abc123",
+          debug_payload: "drop me",
+          provider: "asr",
+        },
+      }],
+      voice_turns: [{
+        role: "user",
+        transcript: "my email is user@example.com",
+        metadata: {
+          password: "secret",
+          provider: "web",
+        },
+      }],
+      tool_calls: [{
+        tool_name: "lookup_account",
+        input: {
+          api_key: "secret-key",
+          account_id: "acct_123",
+        },
+        error: "token=abc123",
+      }],
+    }));
+
+    expect(result.counts).toEqual({ logs: 1, voice_turns: 1, tool_calls: 1 });
+    expect(captured?.logs[0].message).toBe("customer [REDACTED_EMAIL] sent Bearer [REDACTED]");
+    expect(captured?.logs[0].attributes).toEqual({
+      authorization: "[REDACTED]",
+      provider: "asr",
+    });
+    expect(captured?.voiceTurns[0].transcript).toBe("my email is [REDACTED_EMAIL]");
+    expect(captured?.voiceTurns[0].metadata).toEqual({
+      password: "[REDACTED]",
+      provider: "web",
+    });
+    expect(captured?.toolCalls[0].input).toEqual({
+      api_key: "[REDACTED]",
+      account_id: "acct_123",
+    });
+    expect(captured?.toolCalls[0].error).toBe("token=[REDACTED]");
   });
 });

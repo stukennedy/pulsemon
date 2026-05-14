@@ -7,6 +7,13 @@ import {
   type IngestError,
 } from "./errors";
 import {
+  DEFAULT_INGEST_GOVERNANCE_CONFIG,
+  governLogInsert,
+  governMetricInsert,
+  governSpanInsert,
+  type IngestGovernanceConfig,
+} from "./governance";
+import {
   DEFAULT_INGEST_PRESSURE_CONFIG,
   sampleItems,
   type IngestPressureConfig,
@@ -28,6 +35,7 @@ export interface OtlpDeps {
   readonly requiredScope: string;
   readonly defaultTenant: TenantScope;
   readonly pressure?: IngestPressureController;
+  readonly governance?: IngestGovernanceConfig;
 }
 
 type OtlpRecord = Record<string, unknown>;
@@ -53,6 +61,10 @@ function preparePressure(
   return deps.pressure
     ? deps.pressure.prepare(context, deps.requiredScope)
     : Effect.succeed(DEFAULT_INGEST_PRESSURE_CONFIG);
+}
+
+function governanceConfig(deps: OtlpDeps) {
+  return deps.governance ?? DEFAULT_INGEST_GOVERNANCE_CONFIG;
 }
 
 function metricCountResult(count: number, sampledOut: number) {
@@ -204,7 +216,11 @@ function ensureBatchSize(count: number): Effect.Effect<void, ValidationError | P
   return Effect.void;
 }
 
-function traceSpans(raw: unknown, tenant: TenantScope): SpanInsert[] {
+function traceSpans(
+  raw: unknown,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): SpanInsert[] {
   const root = asRecord(raw);
   const records: SpanInsert[] = [];
 
@@ -224,7 +240,7 @@ function traceSpans(raw: unknown, tenant: TenantScope): SpanInsert[] {
         if (!trace_id || !operation) continue;
 
         const spanStatus = status(spanRecord);
-        records.push({
+        records.push(governSpanInsert({
           ...tenant,
           id,
           trace_id,
@@ -238,7 +254,7 @@ function traceSpans(raw: unknown, tenant: TenantScope): SpanInsert[] {
           status: spanStatus.status,
           status_message: spanStatus.status_message,
           attributes: attributesToObject(asArray(spanRecord.attributes)),
-        });
+        }, governance));
       }
     }
   }
@@ -246,7 +262,11 @@ function traceSpans(raw: unknown, tenant: TenantScope): SpanInsert[] {
   return records;
 }
 
-function metricRecords(raw: unknown, tenant: TenantScope): MetricInsert[] {
+function metricRecords(
+  raw: unknown,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): MetricInsert[] {
   const root = asRecord(raw);
   const records: MetricInsert[] = [];
 
@@ -282,7 +302,7 @@ function metricRecords(raw: unknown, tenant: TenantScope): MetricInsert[] {
             ?? asNumber(pointRecord.count);
           if (value === undefined) continue;
 
-          records.push({
+          records.push(governMetricInsert({
             ...tenant,
             id: uuid(),
             service,
@@ -291,7 +311,7 @@ function metricRecords(raw: unknown, tenant: TenantScope): MetricInsert[] {
             timestamp: unixNanoToIso(pointRecord.timeUnixNano),
             value,
             tags: attributesToObject(asArray(pointRecord.attributes)),
-          });
+          }, governance));
         }
       }
     }
@@ -300,7 +320,11 @@ function metricRecords(raw: unknown, tenant: TenantScope): MetricInsert[] {
   return records;
 }
 
-function logRecords(raw: unknown, tenant: TenantScope): LogInsert[] {
+function logRecords(
+  raw: unknown,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): LogInsert[] {
   const root = asRecord(raw);
   const records: LogInsert[] = [];
 
@@ -317,7 +341,7 @@ function logRecords(raw: unknown, tenant: TenantScope): LogInsert[] {
         const message = bodyValue(logRecord.body);
         if (!message) continue;
 
-        records.push({
+        records.push(governLogInsert({
           ...tenant,
           id: asString(logRecord.observedTimeUnixNano) ?? uuid(),
           timestamp: unixNanoToIso(logRecord.timeUnixNano ?? logRecord.observedTimeUnixNano),
@@ -328,7 +352,7 @@ function logRecords(raw: unknown, tenant: TenantScope): LogInsert[] {
           span_id: asString(logRecord.spanId),
           connection_id: attributeString(asArray(logRecord.attributes), "connection.id"),
           attributes: attributesToObject(asArray(logRecord.attributes)),
-        });
+        }, governance));
       }
     }
   }
@@ -343,7 +367,7 @@ export function postOtlpTraces(
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
     yield* preparePressure(deps, auth);
-    const spans = traceSpans(raw, auth);
+    const spans = traceSpans(raw, auth, governanceConfig(deps));
     yield* ensureBatchSize(spans.length);
     yield* deps.repository.writeBatch({ ...emptyBatch(), spans });
     return { counts: { spans: spans.length } };
@@ -357,7 +381,7 @@ export function postOtlpMetrics(
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
     const pressure = yield* preparePressure(deps, auth);
-    const metrics = metricRecords(raw, auth);
+    const metrics = metricRecords(raw, auth, governanceConfig(deps));
     yield* ensureBatchSize(metrics.length);
     const sampled = sampleItems(metrics, pressure, (metric) => metric.id);
     if (sampled.kept.length > 0) {
@@ -374,7 +398,7 @@ export function postOtlpLogs(
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
     const pressure = yield* preparePressure(deps, auth);
-    const logs = logRecords(raw, auth);
+    const logs = logRecords(raw, auth, governanceConfig(deps));
     yield* ensureBatchSize(logs.length);
     const sampled = sampleItems(logs, pressure, (log) => log.id);
     if (sampled.kept.length > 0) {

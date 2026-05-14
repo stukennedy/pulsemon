@@ -52,9 +52,9 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 
 ## Using Pulsemon
 
-Pulsemon is instrumented over HTTP. There is no SDK or OpenTelemetry collector in
-this repo yet: your application sends JSON records to `/api/ingest/*`, and the UI
-reads those records from D1.
+Pulsemon is instrumented over HTTP. This repo includes a TypeScript SDK in
+`src/sdk`, and applications can also send JSON records directly to
+`/api/ingest/*`. The UI reads those records from D1.
 
 The basic model is:
 
@@ -88,6 +88,10 @@ Optional production controls:
 wrangler secret put UI_BASIC_AUTH   # value format: username:password
 wrangler secret put INGEST_API_KEYS # JSON map of bearer token to scopes
 wrangler secret put INGEST_MAX_BYTES
+wrangler secret put INGEST_REDACT_KEYS
+wrangler secret put INGEST_ATTRIBUTE_DENY_KEYS
+wrangler secret put INGEST_ATTRIBUTE_ALLOW_KEYS
+wrangler secret put INGEST_MAX_ATTRIBUTE_KEYS
 wrangler secret put DEFAULT_WORKSPACE_ID
 wrangler secret put DEFAULT_PROJECT_ID
 wrangler secret put MAINTENANCE_API_KEY
@@ -140,6 +144,22 @@ Ingest pressure controls are disabled by default. Set
 project, and scope. Set `INGEST_SAMPLE_RATE` between `0` and `1` to
 deterministically sample high-volume events, metrics, and logs while retaining
 connection and span lifecycle records.
+
+Ingest governance is enabled by default before telemetry is persisted. Pulsemon
+redacts common sensitive keys (`authorization`, `password`, `token`, `api_key`,
+`secret`, cookies, and related variants), redacts emails, bearer tokens, and
+Luhn-valid payment card numbers in text fields, and caps structured attribute
+objects at 100 keys with string values capped at 4096 characters. Tune it with:
+
+```bash
+INGEST_REDACT_KEYS=authorization,password,token,api_key,secret
+INGEST_ATTRIBUTE_DENY_KEYS=raw_audio,debug_payload
+INGEST_ATTRIBUTE_ALLOW_KEYS=provider,model,region,session_id
+INGEST_MAX_ATTRIBUTE_KEYS=100
+INGEST_MAX_ATTRIBUTE_VALUE_LENGTH=4096
+INGEST_REDACT_TEXT=true
+INGEST_REDACTION_DISABLED=false
+```
 
 Monitor evaluations are available at `/monitors` and `/api/monitors`. They
 currently cover ASR/LLM/TTS p95 latency, voice interruption rate, agent tool

@@ -8,6 +8,19 @@ import {
   type IngestError,
 } from "./errors";
 import {
+  DEFAULT_INGEST_GOVERNANCE_CONFIG,
+  governAgentToolCallInsert,
+  governConnectionInsert,
+  governConnectionUpdate,
+  governEventInsert,
+  governLogInsert,
+  governMetricInsert,
+  governSpanInsert,
+  governSpanUpdate,
+  governVoiceTurnInsert,
+  type IngestGovernanceConfig,
+} from "./governance";
+import {
   DEFAULT_INGEST_PRESSURE_CONFIG,
   sampleItems,
   type IngestPressureConfig,
@@ -57,6 +70,7 @@ export interface IngestDeps {
   readonly requiredScope: string;
   readonly defaultTenant: TenantScope;
   readonly pressure?: IngestPressureController;
+  readonly governance?: IngestGovernanceConfig;
 }
 
 function uuid() {
@@ -100,6 +114,10 @@ function preparePressure(
   return deps.pressure
     ? deps.pressure.prepare(context, deps.requiredScope)
     : Effect.succeed(DEFAULT_INGEST_PRESSURE_CONFIG);
+}
+
+function governanceConfig(deps: IngestDeps) {
+  return deps.governance ?? DEFAULT_INGEST_GOVERNANCE_CONFIG;
 }
 
 function countResult(count: number, sampledOut: number) {
@@ -152,8 +170,12 @@ function ensureSpanUpdate(input: PatchSpanInput) {
   return Effect.void;
 }
 
-function connectionInsert(input: PostConnectionInput, tenant: TenantScope): ConnectionInsert {
-  return {
+function connectionInsert(
+  input: PostConnectionInput,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): ConnectionInsert {
+  return governConnectionInsert({
     ...tenant,
     id: input.id || uuid(),
     service: input.service,
@@ -163,11 +185,15 @@ function connectionInsert(input: PostConnectionInput, tenant: TenantScope): Conn
     started_at: input.started_at || now(),
     status: input.status ?? "active",
     metadata: input.metadata,
-  };
+  }, governance);
 }
 
-function spanInsert(input: PostSpanInput, tenant: TenantScope): SpanInsert {
-  return {
+function spanInsert(
+  input: PostSpanInput,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): SpanInsert {
+  return governSpanInsert({
     ...tenant,
     id: input.id || uuid(),
     trace_id: input.trace_id,
@@ -181,11 +207,15 @@ function spanInsert(input: PostSpanInput, tenant: TenantScope): SpanInsert {
     status: input.status ?? "ok",
     status_message: input.status_message,
     attributes: input.attributes,
-  };
+  }, governance);
 }
 
-function eventInsert(input: PostEventInput, tenant: TenantScope): EventInsert {
-  return {
+function eventInsert(
+  input: PostEventInput,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): EventInsert {
+  return governEventInsert({
     ...tenant,
     id: input.id || uuid(),
     connection_id: input.connection_id,
@@ -196,11 +226,15 @@ function eventInsert(input: PostEventInput, tenant: TenantScope): EventInsert {
     data: input.data,
     direction: input.direction,
     size_bytes: input.size_bytes,
-  };
+  }, governance);
 }
 
-function metricInsert(input: PostMetricInput, tenant: TenantScope): MetricInsert {
-  return {
+function metricInsert(
+  input: PostMetricInput,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): MetricInsert {
+  return governMetricInsert({
     ...tenant,
     id: input.id || uuid(),
     service: input.service,
@@ -209,11 +243,15 @@ function metricInsert(input: PostMetricInput, tenant: TenantScope): MetricInsert
     timestamp: input.timestamp || now(),
     value: input.value,
     tags: input.tags,
-  };
+  }, governance);
 }
 
-function logInsert(input: PostLogInput, tenant: TenantScope): LogInsert {
-  return {
+function logInsert(
+  input: PostLogInput,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): LogInsert {
+  return governLogInsert({
     ...tenant,
     id: input.id || uuid(),
     timestamp: input.timestamp || now(),
@@ -224,11 +262,15 @@ function logInsert(input: PostLogInput, tenant: TenantScope): LogInsert {
     span_id: input.span_id,
     connection_id: input.connection_id,
     attributes: input.attributes,
-  };
+  }, governance);
 }
 
-function voiceTurnInsert(input: PostVoiceTurnInput, tenant: TenantScope): VoiceTurnInsert {
-  return {
+function voiceTurnInsert(
+  input: PostVoiceTurnInput,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): VoiceTurnInsert {
+  return governVoiceTurnInsert({
     ...tenant,
     id: input.id || uuid(),
     connection_id: input.connection_id,
@@ -253,11 +295,15 @@ function voiceTurnInsert(input: PostVoiceTurnInput, tenant: TenantScope): VoiceT
     cost_usd: input.cost_usd,
     state: input.state,
     metadata: input.metadata,
-  };
+  }, governance);
 }
 
-function agentToolCallInsert(input: PostAgentToolCallInput, tenant: TenantScope): AgentToolCallInsert {
-  return {
+function agentToolCallInsert(
+  input: PostAgentToolCallInput,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): AgentToolCallInsert {
+  return governAgentToolCallInsert({
     ...tenant,
     id: input.id || uuid(),
     trace_id: input.trace_id,
@@ -275,25 +321,26 @@ function agentToolCallInsert(input: PostAgentToolCallInput, tenant: TenantScope)
     output: input.output,
     error: input.error,
     metadata: input.metadata,
-  };
+  }, governance);
 }
 
 function normalizeBatch(
   input: BatchInput,
   tenant: TenantScope,
-  pressure: IngestPressureConfig
+  pressure: IngestPressureConfig,
+  governance: IngestGovernanceConfig
 ): { batch: TelemetryBatchWrite; sampledOut: number } {
   const connectionUpdates: ConnectionUpdate[] = [];
   for (const update of input.connection_updates ?? []) {
     if (hasConnectionUpdateFields(update)) {
-      connectionUpdates.push({ ...tenant, ...update });
+      connectionUpdates.push(governConnectionUpdate({ ...tenant, ...update }, governance));
     }
   }
 
   const spanUpdates: SpanUpdate[] = [];
   for (const update of input.span_updates ?? []) {
     if (hasSpanUpdateFields(update)) {
-      spanUpdates.push({ ...tenant, ...update });
+      spanUpdates.push(governSpanUpdate({ ...tenant, ...update }, governance));
     }
   }
 
@@ -303,15 +350,15 @@ function normalizeBatch(
 
   return {
     batch: {
-      connections: (input.connections ?? []).map((input) => connectionInsert(input, tenant)),
+      connections: (input.connections ?? []).map((input) => connectionInsert(input, tenant, governance)),
       connectionUpdates,
-      spans: (input.spans ?? []).map((input) => spanInsert(input, tenant)),
+      spans: (input.spans ?? []).map((input) => spanInsert(input, tenant, governance)),
       spanUpdates,
-      events: sampledEvents.kept.map((input) => eventInsert(input, tenant)),
-      metrics: sampledMetrics.kept.map((input) => metricInsert(input, tenant)),
-      logs: sampledLogs.kept.map((input) => logInsert(input, tenant)),
-      voiceTurns: (input.voice_turns ?? []).map((input) => voiceTurnInsert(input, tenant)),
-      toolCalls: (input.tool_calls ?? []).map((input) => agentToolCallInsert(input, tenant)),
+      events: sampledEvents.kept.map((input) => eventInsert(input, tenant, governance)),
+      metrics: sampledMetrics.kept.map((input) => metricInsert(input, tenant, governance)),
+      logs: sampledLogs.kept.map((input) => logInsert(input, tenant, governance)),
+      voiceTurns: (input.voice_turns ?? []).map((input) => voiceTurnInsert(input, tenant, governance)),
+      toolCalls: (input.tool_calls ?? []).map((input) => agentToolCallInsert(input, tenant, governance)),
     },
     sampledOut: sampledEvents.sampledOut + sampledMetrics.sampledOut + sampledLogs.sampledOut,
   };
@@ -353,7 +400,7 @@ export function postConnection(
     const auth = yield* authorizeIngest(deps);
     yield* preparePressure(deps, auth);
     const input = yield* decode(PostConnectionInputSchema, raw);
-    const record = connectionInsert(input, auth);
+    const record = connectionInsert(input, auth, governanceConfig(deps));
     yield* deps.repository.insertConnection(record);
     return { id: record.id };
   });
@@ -369,7 +416,7 @@ export function patchConnection(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PatchConnectionInputSchema, raw);
     yield* ensureConnectionUpdate(input);
-    yield* deps.repository.updateConnection(id, { ...auth, ...input });
+    yield* deps.repository.updateConnection(id, governConnectionUpdate({ ...auth, ...input }, governanceConfig(deps)));
     return { id };
   });
 }
@@ -382,7 +429,7 @@ export function postSpan(
     const auth = yield* authorizeIngest(deps);
     yield* preparePressure(deps, auth);
     const input = yield* decode(PostSpanInputSchema, raw);
-    const record = spanInsert(input, auth);
+    const record = spanInsert(input, auth, governanceConfig(deps));
     yield* deps.repository.insertSpan(record);
     return { id: record.id };
   });
@@ -398,7 +445,7 @@ export function patchSpan(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PatchSpanInputSchema, raw);
     yield* ensureSpanUpdate(input);
-    yield* deps.repository.updateSpan(id, { ...auth, ...input });
+    yield* deps.repository.updateSpan(id, governSpanUpdate({ ...auth, ...input }, governanceConfig(deps)));
     return { id };
   });
 }
@@ -418,7 +465,7 @@ export function postEvents(
       "Max 500 events per request"
     );
     const sampled = sampleItems(items, pressure, eventSamplingKey);
-    const records = sampled.kept.map((input) => eventInsert(input, auth));
+    const records = sampled.kept.map((input) => eventInsert(input, auth, governanceConfig(deps)));
     if (records.length > 0) {
       yield* deps.repository.insertEvents(records);
     }
@@ -441,7 +488,7 @@ export function postMetrics(
       "Max 500 metrics per request"
     );
     const sampled = sampleItems(items, pressure, metricSamplingKey);
-    const records = sampled.kept.map((input) => metricInsert(input, auth));
+    const records = sampled.kept.map((input) => metricInsert(input, auth, governanceConfig(deps)));
     if (records.length > 0) {
       yield* deps.repository.insertMetrics(records);
     }
@@ -464,7 +511,7 @@ export function postLogs(
       "Max 1000 logs per request"
     );
     const sampled = sampleItems(items, pressure, logSamplingKey);
-    const records = sampled.kept.map((input) => logInsert(input, auth));
+    const records = sampled.kept.map((input) => logInsert(input, auth, governanceConfig(deps)));
     if (records.length > 0) {
       yield* deps.repository.insertLogs(records);
     }
@@ -486,7 +533,7 @@ export function postVoiceTurns(
       500,
       "Max 500 voice turns per request"
     );
-    const records = items.map((input) => voiceTurnInsert(input, auth));
+    const records = items.map((input) => voiceTurnInsert(input, auth, governanceConfig(deps)));
     yield* deps.repository.insertVoiceTurns(records);
     return { count: records.length };
   });
@@ -506,7 +553,7 @@ export function postAgentToolCalls(
       500,
       "Max 500 tool calls per request"
     );
-    const records = items.map((input) => agentToolCallInsert(input, auth));
+    const records = items.map((input) => agentToolCallInsert(input, auth, governanceConfig(deps)));
     yield* deps.repository.insertAgentToolCalls(records);
     return { count: records.length };
   });
@@ -520,7 +567,7 @@ export function postBatch(
     const auth = yield* authorizeIngest(deps);
     const pressure = yield* preparePressure(deps, auth);
     const input = yield* decode(BatchInputSchema, raw);
-    const { batch, sampledOut } = normalizeBatch(input, auth, pressure);
+    const { batch, sampledOut } = normalizeBatch(input, auth, pressure, governanceConfig(deps));
     const total = operationCount(batch);
 
     if (total === 0) {

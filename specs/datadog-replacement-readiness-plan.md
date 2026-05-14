@@ -93,7 +93,8 @@ Prepare for real deployments.
 
 Control risk in high-volume, multi-team telemetry.
 
-- PII redaction and attribute allow/deny lists.
+- PII redaction and attribute allow/deny lists. Initial native/OTLP ingest
+  redaction is in place; persistent cardinality budgets and RBAC remain.
 - Cardinality budgets per workspace/project/scope.
 - Per-signal retention and sampling policies.
 - RBAC and audit logs beyond Basic auth.
@@ -131,3 +132,6 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: added baseline operations hardening with GitHub Actions CI for
   typecheck/tests/build and a configurable `bun run load:ingest` script for
   batch ingest load testing.
+- 2026-05-14: started governance controls with default ingest-time sensitive key
+  redaction, text PII redaction, attribute allow/deny lists, attribute key/value
+  caps, native ingest wiring, and OTLP ingest wiring.
