@@ -9,6 +9,8 @@ export const OTLP_END_TIMESTAMP_NANOS = "1800000000500000000";
 export const OTLP_TRACE_OPERATION = "voice.turn";
 export const OTLP_METRIC_NAME = "voice.latency_ms";
 export const OTLP_METRIC_VALUE = 123.4;
+export const OTLP_HISTOGRAM_METRIC_NAME = "voice.turn.duration_ms";
+export const OTLP_SUMMARY_METRIC_NAME = "voice.turn.summary_ms";
 export const OTLP_LOG_MESSAGE = "provider timeout";
 
 export const otlpJsonTraceRequest = {
@@ -61,6 +63,70 @@ export const otlpJsonMetricRequest = {
               { key: "session.id", value: { stringValue: OTLP_SESSION_ID } },
               { key: "gen_ai.request.model", value: { stringValue: "gpt-realtime" } },
               { key: "voice.provider", value: { stringValue: "asr" } },
+            ],
+          }],
+        },
+      }],
+    }],
+  }],
+} as const;
+
+export const otlpJsonHistogramMetricRequest = {
+  resourceMetrics: [{
+    resource: {
+      attributes: [
+        { key: "service.name", value: { stringValue: OTLP_SERVICE_NAME } },
+        { key: "service.namespace", value: { stringValue: "realtime" } },
+      ],
+    },
+    scopeMetrics: [{
+      metrics: [{
+        name: OTLP_HISTOGRAM_METRIC_NAME,
+        unit: "ms",
+        histogram: {
+          dataPoints: [{
+            timeUnixNano: OTLP_TIMESTAMP_NANOS,
+            count: "4",
+            sum: 400,
+            min: 50,
+            max: 150,
+            explicitBounds: [50, 100, 200],
+            bucketCounts: ["1", "2", "1", "0"],
+            attributes: [
+              { key: "provider", value: { stringValue: "turn-detector" } },
+              { key: "session.id", value: { stringValue: OTLP_SESSION_ID } },
+            ],
+          }],
+        },
+      }],
+    }],
+  }],
+} as const;
+
+export const otlpJsonSummaryMetricRequest = {
+  resourceMetrics: [{
+    resource: {
+      attributes: [
+        { key: "service.name", value: { stringValue: OTLP_SERVICE_NAME } },
+        { key: "service.namespace", value: { stringValue: "realtime" } },
+      ],
+    },
+    scopeMetrics: [{
+      metrics: [{
+        name: OTLP_SUMMARY_METRIC_NAME,
+        unit: "ms",
+        summary: {
+          dataPoints: [{
+            timeUnixNano: OTLP_TIMESTAMP_NANOS,
+            count: "10",
+            sum: 900,
+            quantileValues: [
+              { quantile: 0.5, value: 80 },
+              { quantile: 0.95, value: 140 },
+            ],
+            attributes: [
+              { key: "provider", value: { stringValue: "turn-detector" } },
+              { key: "session.id", value: { stringValue: OTLP_SESSION_ID } },
             ],
           }],
         },
@@ -155,6 +221,17 @@ function doubleField(number: number, value: number) {
   return concat([fieldTag(number, 1), bytes]);
 }
 
+function packedDoubleField(number: number, values: readonly number[]) {
+  const bytes = new Uint8Array(values.length * 8);
+  const view = new DataView(bytes.buffer);
+  values.forEach((value, index) => view.setFloat64(index * 8, value, true));
+  return bytesField(number, bytes);
+}
+
+function packedVarintField(number: number, values: readonly (number | bigint)[]) {
+  return bytesField(number, concat(values.map(varint)));
+}
+
 function hexBytes(value: string) {
   const bytes = new Uint8Array(value.length / 2);
   for (let index = 0; index < bytes.length; index++) {
@@ -225,6 +302,56 @@ export const otlpProtobufMetricRequest = messageField(1, [
           keyValueField(7, "session.id", stringAnyValue(OTLP_SESSION_ID)),
           keyValueField(7, "gen_ai.request.model", stringAnyValue("gpt-realtime")),
           keyValueField(7, "voice.provider", stringAnyValue("asr")),
+        ]),
+      ]),
+    ]),
+  ]),
+]);
+
+export const otlpProtobufHistogramMetricRequest = messageField(1, [
+  resource(OTLP_SERVICE_NAME),
+  messageField(2, [
+    messageField(2, [
+      stringField(1, OTLP_HISTOGRAM_METRIC_NAME),
+      stringField(3, "ms"),
+      messageField(9, [
+        messageField(1, [
+          fixed64Field(3, timestampNanos),
+          varintField(4, 4),
+          doubleField(5, 400),
+          packedDoubleField(6, [50, 100, 200]),
+          packedVarintField(7, [1, 2, 1, 0]),
+          keyValueField(9, "provider", stringAnyValue("turn-detector")),
+          keyValueField(9, "session.id", stringAnyValue(OTLP_SESSION_ID)),
+          doubleField(11, 50),
+          doubleField(12, 150),
+        ]),
+      ]),
+    ]),
+  ]),
+]);
+
+export const otlpProtobufSummaryMetricRequest = messageField(1, [
+  resource(OTLP_SERVICE_NAME),
+  messageField(2, [
+    messageField(2, [
+      stringField(1, OTLP_SUMMARY_METRIC_NAME),
+      stringField(3, "ms"),
+      messageField(11, [
+        messageField(1, [
+          fixed64Field(3, timestampNanos),
+          varintField(4, 10),
+          doubleField(5, 900),
+          messageField(6, [
+            doubleField(1, 0.5),
+            doubleField(2, 80),
+          ]),
+          messageField(6, [
+            doubleField(1, 0.95),
+            doubleField(2, 140),
+          ]),
+          keyValueField(7, "provider", stringAnyValue("turn-detector")),
+          keyValueField(7, "session.id", stringAnyValue(OTLP_SESSION_ID)),
         ]),
       ]),
     ]),

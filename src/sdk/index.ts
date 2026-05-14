@@ -77,6 +77,13 @@ export interface MetricInput {
   readonly metric_type: string;
   readonly timestamp?: string;
   readonly value: number;
+  readonly unit?: string;
+  readonly count?: number;
+  readonly sum?: number;
+  readonly min?: number;
+  readonly max?: number;
+  readonly buckets?: unknown;
+  readonly quantiles?: unknown;
   readonly tags?: unknown;
 }
 

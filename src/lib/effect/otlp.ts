@@ -144,6 +144,36 @@ function attributeString(attributes: unknown[], key: string): string | undefined
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+function numberArray(value: unknown): number[] | undefined {
+  const numbers = asArray(value)
+    .map(asNumber)
+    .filter((item): item is number => item !== undefined);
+  return numbers.length > 0 ? numbers : undefined;
+}
+
+function histogramBuckets(point: OtlpRecord): Record<string, number[]> | undefined {
+  const explicitBounds = numberArray(point.explicitBounds);
+  const bucketCounts = numberArray(point.bucketCounts);
+  if (!explicitBounds && !bucketCounts) return undefined;
+  return {
+    ...(explicitBounds ? { explicit_bounds: explicitBounds } : {}),
+    ...(bucketCounts ? { bucket_counts: bucketCounts } : {}),
+  };
+}
+
+function summaryQuantiles(point: OtlpRecord): Array<{ quantile: number; value: number }> | undefined {
+  const quantiles = asArray(point.quantileValues)
+    .map((item) => {
+      const record = asRecord(item);
+      if (!record) return null;
+      const quantile = asNumber(record.quantile);
+      const value = asNumber(record.value);
+      return quantile === undefined || value === undefined ? null : { quantile, value };
+    })
+    .filter((item): item is { quantile: number; value: number } => Boolean(item));
+  return quantiles.length > 0 ? quantiles : undefined;
+}
+
 function serviceName(resource: unknown): string {
   const resourceRecord = asRecord(resource);
   const attributes = asArray(resourceRecord?.attributes);
@@ -301,6 +331,8 @@ function metricRecords(
             ? { type: "counter", points: asArray(asRecord(metricRecord.sum)?.dataPoints) }
             : asRecord(metricRecord.histogram)
               ? { type: "histogram", points: asArray(asRecord(metricRecord.histogram)?.dataPoints) }
+              : asRecord(metricRecord.summary)
+                ? { type: "summary", points: asArray(asRecord(metricRecord.summary)?.dataPoints) }
               : null;
         if (!data) continue;
 
@@ -308,10 +340,14 @@ function metricRecords(
           const pointRecord = asRecord(point);
           if (!pointRecord) continue;
 
+          const count = asNumber(pointRecord.count);
+          const sum = asNumber(pointRecord.sum);
+          const quantiles = summaryQuantiles(pointRecord);
           const value = asNumber(pointRecord.asDouble)
             ?? asNumber(pointRecord.asInt)
-            ?? asNumber(pointRecord.sum)
-            ?? asNumber(pointRecord.count);
+            ?? sum
+            ?? count
+            ?? quantiles?.[0]?.value;
           if (value === undefined) continue;
 
           records.push(governMetricInsert({
@@ -322,6 +358,13 @@ function metricRecords(
             metric_type: data.type,
             timestamp: unixNanoToIso(pointRecord.timeUnixNano),
             value,
+            unit: asString(metricRecord.unit),
+            count,
+            sum,
+            min: asNumber(pointRecord.min),
+            max: asNumber(pointRecord.max),
+            buckets: histogramBuckets(pointRecord),
+            quantiles,
             tags: attributesToObject(asArray(pointRecord.attributes)),
           }, governance));
         }

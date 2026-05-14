@@ -29,10 +29,10 @@ by `src/test/api/otlp.test.ts`.
 | Fixture | Coverage |
 | --- | --- |
 | JSON trace export | `resourceSpans`, `scopeSpans`, trace/span IDs, parent span ID, operation name, start/end timestamps, status, attributes |
-| JSON metric export | `resourceMetrics`, `scopeMetrics`, gauge datapoint, `asDouble`, datapoint attributes |
+| JSON metric export | `resourceMetrics`, `scopeMetrics`, gauge datapoint, histogram buckets, summary quantiles, datapoint attributes |
 | JSON log export | `resourceLogs`, `scopeLogs`, severity text/number, body, trace/span IDs, attributes |
 | Protobuf trace export | Same trace fields as JSON using OTLP protobuf wire encoding |
-| Protobuf metric export | Same metric fields as JSON using OTLP protobuf wire encoding |
+| Protobuf metric export | Gauge datapoints, histogram bucket details, and summary quantiles using OTLP protobuf wire encoding |
 | Protobuf log export | Same log fields as JSON using OTLP protobuf wire encoding |
 | Gzip request | Compressed JSON log export |
 
@@ -47,7 +47,9 @@ by `src/test/api/otlp.test.ts`.
 | Span/log `connection.id` attribute | Lifted into native `connection_id` for realtime correlation |
 | Log `traceId` / `spanId` | Stored as native trace/span correlation |
 | Log body | Stored as native message; non-string values are JSON stringified |
-| Metric gauge/sum/histogram datapoints | Stored as native metric samples |
+| Metric gauge/sum datapoints | Stored as native metric samples |
+| Metric histogram datapoints | Stored as samples with native `count`, `sum`, `min`, `max`, and bucket JSON |
+| Metric summary datapoints | Stored as samples with native `count`, `sum`, and quantile JSON |
 | Other attributes | Preserved in span attributes, metric tags, or log attributes |
 
 The fixtures intentionally include realtime voice and agentic attributes such
@@ -59,10 +61,8 @@ searching, session timelines, and downstream SLO/monitor workflows.
 
 - OTLP/gRPC is not implemented; deploy an OpenTelemetry Collector or SDK
   exporter using OTLP HTTP.
-- Histogram support currently stores representative `sum` or `count` values as
-  metric samples. Explicit buckets, exemplars, and exponential histograms are
-  not yet modeled as native first-class records.
-- Summary metrics are not translated.
+- Exemplars and exponential histograms are not yet modeled as native
+  first-class records.
 - Protobuf decoding covers the export request fields represented by the
   fixtures. Unknown fields are ignored by design.
 - Live SDK and Collector version certification should be recorded per platform

@@ -71,6 +71,13 @@ export const PostMetricInputSchema = Schema.Struct({
   metric_type: Schema.NonEmptyString,
   timestamp: OptionalString,
   value: Schema.Number,
+  unit: OptionalString,
+  count: OptionalNumber,
+  sum: OptionalNumber,
+  min: OptionalNumber,
+  max: OptionalNumber,
+  buckets: OptionalUnknown,
+  quantiles: OptionalUnknown,
   tags: OptionalUnknown,
 });
 export type PostMetricInput = Schema.Schema.Type<typeof PostMetricInputSchema>;

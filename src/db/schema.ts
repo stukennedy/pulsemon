@@ -71,6 +71,13 @@ export const metrics = sqliteTable("metrics", {
   metric_type: text("metric_type").notNull(), // gauge, counter, histogram
   timestamp: text("timestamp").notNull().default(sql`(datetime('now'))`),
   value: real("value").notNull(),
+  unit: text("unit"),
+  count: real("count"),
+  sum: real("sum"),
+  min: real("min"),
+  max: real("max"),
+  buckets: text("buckets"), // JSON
+  quantiles: text("quantiles"), // JSON
   tags: text("tags"), // JSON
 });
 

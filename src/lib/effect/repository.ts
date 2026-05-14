@@ -204,8 +204,8 @@ function bindEventInsert(db: D1Database, input: EventInsert) {
 
 function bindMetricInsert(db: D1Database, input: MetricInsert) {
   return db.prepare(
-    `INSERT INTO metrics (id, workspace_id, project_id, service, metric_name, metric_type, timestamp, value, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO metrics (id, workspace_id, project_id, service, metric_name, metric_type, timestamp, value, unit, count, sum, min, max, buckets, quantiles, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
@@ -216,6 +216,13 @@ function bindMetricInsert(db: D1Database, input: MetricInsert) {
     input.metric_type,
     input.timestamp,
     input.value,
+    input.unit ?? null,
+    input.count ?? null,
+    input.sum ?? null,
+    input.min ?? null,
+    input.max ?? null,
+    optionalJson(input.buckets),
+    optionalJson(input.quantiles),
     optionalJson(input.tags)
   );
 }

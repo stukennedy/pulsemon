@@ -248,7 +248,12 @@ export function governEventInsert(input: EventInsert, config: IngestGovernanceCo
 }
 
 export function governMetricInsert(input: MetricInsert, config: IngestGovernanceConfig): MetricInsert {
-  return { ...input, tags: governValue(input.tags, config) };
+  return {
+    ...input,
+    buckets: governValue(input.buckets, config),
+    quantiles: governValue(input.quantiles, config),
+    tags: governValue(input.tags, config),
+  };
 }
 
 export function governLogInsert(input: LogInsert, config: IngestGovernanceConfig): LogInsert {

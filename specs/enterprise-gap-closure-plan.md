@@ -80,3 +80,5 @@ ordered D1 SQL migration, and run the full test suite.
 - 2026-05-14: completed the OIDC login/session increment with authorization
   redirects, callback token exchange, signed state/session cookies, logout, and
   auth audit events.
+- 2026-05-14: added native metric distribution detail columns and OTLP
+  translation for histogram buckets and summary quantiles.

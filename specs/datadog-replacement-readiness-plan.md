@@ -155,3 +155,5 @@ Control risk in high-volume, multi-team telemetry.
   criteria.
 - 2026-05-14: added OIDC authorization-code login, callback/session handling,
   signed UI cookies, logout, and auth audit events.
+- 2026-05-14: added metric distribution details for histograms and summaries,
+  including OTLP bucket and quantile translation.

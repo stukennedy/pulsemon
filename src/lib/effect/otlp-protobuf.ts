@@ -44,6 +44,14 @@ class ProtoReader {
     return fields;
   }
 
+  readPackedVarints(): bigint[] {
+    const values: bigint[] = [];
+    while (this.offset < this.bytes.length) {
+      values.push(this.readVarint());
+    }
+    return values;
+  }
+
   private readVarint() {
     let result = 0n;
     let shift = 0n;
@@ -128,12 +136,42 @@ function double(input: readonly ProtoField[], number: number): number | undefine
   return new DataView(value.buffer, value.byteOffset, value.byteLength).getFloat64(0, true);
 }
 
+function doubles(input: readonly ProtoField[], number: number): number[] | undefined {
+  const values: number[] = [];
+  for (const field of all(input, number)) {
+    if (field.bytes && field.bytes.length === 8) {
+      values.push(new DataView(field.bytes.buffer, field.bytes.byteOffset, field.bytes.byteLength).getFloat64(0, true));
+    } else if (field.bytes && field.bytes.length % 8 === 0) {
+      for (let offset = 0; offset < field.bytes.length; offset += 8) {
+        values.push(new DataView(field.bytes.buffer, field.bytes.byteOffset + offset, 8).getFloat64(0, true));
+      }
+    }
+  }
+  return values.length > 0 ? values : undefined;
+}
+
 function intValue(input: readonly ProtoField[], number: number): number | string | undefined {
   const field = first(input, number);
   if (!field) return undefined;
   if (field.varint !== undefined) return Number(field.varint);
   const fixed = littleEndianBigInt(field.bytes);
   return fixed === undefined ? undefined : fixed.toString();
+}
+
+function packedVarints(bytes: Uint8Array) {
+  return new ProtoReader(bytes).readPackedVarints();
+}
+
+function intValues(input: readonly ProtoField[], number: number): Array<number | string> | undefined {
+  const values: Array<number | string> = [];
+  for (const field of all(input, number)) {
+    if (field.varint !== undefined) {
+      values.push(Number(field.varint));
+    } else if (field.bytes) {
+      values.push(...packedVarints(field.bytes).map((value) => Number(value)));
+    }
+  }
+  return values.length > 0 ? values : undefined;
 }
 
 function parseAnyValue(input: readonly ProtoField[]): Record<string, unknown> | undefined {
@@ -240,6 +278,27 @@ function parseHistogramDataPoint(input: readonly ProtoField[]) {
     timeUnixNano: uint64(input, 3),
     count: intValue(input, 4),
     sum: double(input, 5),
+    explicitBounds: doubles(input, 6),
+    bucketCounts: intValues(input, 7),
+    min: double(input, 11),
+    max: double(input, 12),
+  };
+}
+
+function parseValueAtQuantile(input: readonly ProtoField[]) {
+  return {
+    quantile: double(input, 1),
+    value: double(input, 2),
+  };
+}
+
+function parseSummaryDataPoint(input: readonly ProtoField[]) {
+  return {
+    attributes: parseKeyValues(input, 7),
+    timeUnixNano: uint64(input, 3),
+    count: intValue(input, 4),
+    sum: double(input, 5),
+    quantileValues: all(input, 6).map((field) => parseValueAtQuantile(fields(field.bytes))),
   };
 }
 
@@ -271,6 +330,14 @@ function parseMetric(input: readonly ProtoField[]) {
     metric.histogram = {
       dataPoints: all(fields(histogram.bytes), 1)
         .map((field) => parseHistogramDataPoint(fields(field.bytes))),
+    };
+  }
+
+  const summary = first(input, 11);
+  if (summary?.bytes) {
+    metric.summary = {
+      dataPoints: all(fields(summary.bytes), 1)
+        .map((field) => parseSummaryDataPoint(fields(field.bytes))),
     };
   }
 

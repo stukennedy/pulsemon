@@ -268,6 +268,13 @@ function metricInsert(
     metric_type: input.metric_type,
     timestamp: input.timestamp || now(),
     value: input.value,
+    unit: input.unit,
+    count: input.count,
+    sum: input.sum,
+    min: input.min,
+    max: input.max,
+    buckets: input.buckets,
+    quantiles: input.quantiles,
     tags: input.tags,
   }, governance);
 }

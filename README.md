@@ -391,8 +391,9 @@ The supported OTLP routes are `/api/ingest/otlp/v1/traces`,
 `Content-Encoding: gzip`. The protobuf decoder covers the standard OTLP export
 request shapes for resource spans, resource metrics, resource logs, attributes,
 timestamps, IDs, status, gauge/sum datapoints, histogram count/sum datapoints,
-and log bodies. See `specs/opentelemetry-compatibility.md` for the tested
-fixture matrix and rollout certification checklist.
+histogram bucket details, summary quantiles, and log bodies. See
+`specs/opentelemetry-compatibility.md` for the tested fixture matrix and
+rollout certification checklist.
 
 ### Realtime voice and agent records
 
