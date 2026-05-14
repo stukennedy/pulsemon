@@ -492,12 +492,21 @@ bun run build      # Production build
 bun run dev        # Dev server on :8788
 bun run routes     # Regenerate router after adding routes
 bun run load:ingest # Configurable ingest load test
+bun run smoke      # Ingest/query smoke check against a running deployment
 ```
 
 `load:ingest` requires `PULSEMON_KEY` and defaults to
 `PULSEMON_URL=http://localhost:8788`. Tune it with
 `PULSEMON_LOAD_REQUESTS`, `PULSEMON_LOAD_BATCH_SIZE`, and
 `PULSEMON_LOAD_CONCURRENCY`.
+
+`smoke` requires `PULSEMON_KEY` and defaults to
+`PULSEMON_URL=http://localhost:8788`. Set `PULSEMON_BASIC_AUTH=username:password`
+when read APIs are protected, and set `PULSEMON_SMOKE_MAINTENANCE=true` plus
+`PULSEMON_MAINTENANCE_KEY` to include manual maintenance.
+
+See `specs/operations-readiness.md` for staging/prod migration, backup/restore,
+collector, smoke, and load-test runbooks.
 
 CI runs on pushes and pull requests with `bun install --frozen-lockfile`,
 `bun run typecheck`, `bun test`, and `bun run build`.

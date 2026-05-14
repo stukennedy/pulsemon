@@ -144,3 +144,5 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: added OTLP protobuf request decoding for traces, metrics, and
   logs, including resource attributes, span IDs/status, metric datapoints,
   log bodies, and gzip-compatible binary request handling.
+- 2026-05-14: added an operations readiness runbook and `bun run smoke` for
+  deployment-level ingest/query/maintenance smoke checks.
