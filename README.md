@@ -386,7 +386,8 @@ The supported OTLP routes are `/api/ingest/otlp/v1/traces`,
 `Content-Encoding: gzip`. The protobuf decoder covers the standard OTLP export
 request shapes for resource spans, resource metrics, resource logs, attributes,
 timestamps, IDs, status, gauge/sum datapoints, histogram count/sum datapoints,
-and log bodies.
+and log bodies. See `specs/opentelemetry-compatibility.md` for the tested
+fixture matrix and rollout certification checklist.
 
 ### Realtime voice and agent records
 
@@ -491,9 +492,9 @@ await batch.flush();
 | `POST` | `/api/ingest/voice/turns` | Record voice turns with VAD, transcript, latency, token, and cost fields |
 | `POST` | `/api/ingest/agent/tool-calls` | Record agent tool calls, retries, inputs, outputs, and errors |
 | `POST` | `/api/ingest/batch` | Record up to 1000 mixed operations |
-| `POST` | `/api/ingest/otlp/v1/traces` | Translate OTLP JSON traces into spans |
-| `POST` | `/api/ingest/otlp/v1/metrics` | Translate OTLP JSON metrics into samples |
-| `POST` | `/api/ingest/otlp/v1/logs` | Translate OTLP JSON logs into log records |
+| `POST` | `/api/ingest/otlp/v1/traces` | Translate OTLP JSON/protobuf traces into spans |
+| `POST` | `/api/ingest/otlp/v1/metrics` | Translate OTLP JSON/protobuf metrics into samples |
+| `POST` | `/api/ingest/otlp/v1/logs` | Translate OTLP JSON/protobuf logs into log records |
 
 ### Read APIs
 

@@ -37,7 +37,8 @@ repo-owned deliverables.
 ## 5. OpenTelemetry Compatibility
 
 - Add representative OTLP JSON/protobuf fixtures for traces, metrics, and logs.
-- Document tested SDK/Collector versions in a compatibility matrix.
+- Document tested fixture coverage and rollout certification in a compatibility
+  matrix.
 - Add tests that validate fixture ingestion and semantic conventions.
 
 ## 6. DR, Restore, And Capacity
@@ -72,3 +73,6 @@ ordered D1 SQL migration, and run the full test suite.
 - 2026-05-14: added OIDC-oriented auth policy groundwork with role mapping from
   verified claims and an admin policy inspection API; full callback/session
   login remains the next auth increment.
+- 2026-05-14: added repo-owned OTLP JSON/protobuf/gzip fixtures, routed OTLP
+  tests through those fixtures, and documented the compatibility matrix plus
+  rollout certification checklist.
