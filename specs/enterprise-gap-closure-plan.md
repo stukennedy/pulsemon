@@ -64,3 +64,6 @@ ordered D1 SQL migration, and run the full test suite.
 - 2026-05-14: added D1-backed monitor definitions, seeded editable default
   realtime monitors, custom metric average monitors, admin CRUD APIs, and a
   `/monitors` form for creating metric monitors.
+- 2026-05-14: added alert notification fan-out for Slack incoming webhooks,
+  PagerDuty Events API v2 trigger/resolve events, and email-provider webhook
+  bridges alongside the existing generic webhook.

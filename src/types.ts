@@ -49,6 +49,9 @@ export interface Env {
   MAINTENANCE_API_KEY?: string;
   ALERT_WEBHOOK_URL?: string;
   ALERT_WEBHOOK_SECRET?: string;
+  ALERT_SLACK_WEBHOOK_URL?: string;
+  ALERT_PAGERDUTY_ROUTING_KEY?: string;
+  ALERT_EMAIL_WEBHOOK_URL?: string;
   UI_BASIC_AUTH?: string;
   UI_USERS?: string;
 }

@@ -76,4 +76,47 @@ describe("Effect alert processing", () => {
     expect(incident.resolved_at).toBe("2026-05-14T10:05:00.000Z");
     expect(incident.notification_count).toBe(2);
   });
+
+  it("fans out alert notifications to Slack, PagerDuty, and email webhooks", async () => {
+    const ctx = createTestContext();
+    const deliveries: Array<{ url: string; body: any }> = [];
+    const fetcher = async (url: string | URL | Request, init?: RequestInit) => {
+      deliveries.push({
+        url: String(url),
+        body: JSON.parse(init?.body as string),
+      });
+      return new Response("ok", { status: 202 });
+    };
+
+    const result = await Effect.runPromise(processMonitorAlerts(
+      ctx.d1,
+      DEFAULT_TENANT_SCOPE,
+      [evaluation("alert", "2026-05-14T10:00:00.000Z")],
+      {
+        slackWebhookUrl: "https://hooks.slack.example/services/test",
+        pagerDutyRoutingKey: "routing-key",
+        emailWebhookUrl: "https://email.example/send",
+      },
+      fetcher
+    ));
+
+    expect(result).toEqual({ opened: 1, resolved: 0, notifications: 3 });
+    expect(deliveries).toHaveLength(3);
+    expect(deliveries[0].body.text).toContain("Alert: ASR p95 latency");
+    expect(deliveries[1]).toMatchObject({
+      url: "https://events.pagerduty.com/v2/enqueue",
+      body: {
+        routing_key: "routing-key",
+        event_action: "trigger",
+        dedup_key: "default:default:voice.asr_p95_latency_ms:active",
+      },
+    });
+    expect(deliveries[2].body.subject).toBe("Alert: ASR p95 latency");
+
+    const rows = ctx.sqlite
+      .prepare("SELECT target_url, status FROM alert_notifications ORDER BY target_url ASC")
+      .all() as any[];
+    expect(rows).toHaveLength(3);
+    expect(rows.every((row) => row.status === "sent")).toBe(true);
+  });
 });

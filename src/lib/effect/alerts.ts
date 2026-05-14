@@ -7,6 +7,9 @@ import type { MonitorEvaluation } from "./monitors";
 export interface AlertDeliveryConfig {
   readonly webhookUrl?: string;
   readonly webhookSecret?: string;
+  readonly slackWebhookUrl?: string;
+  readonly pagerDutyRoutingKey?: string;
+  readonly emailWebhookUrl?: string;
 }
 
 export interface AlertProcessingResult {
@@ -15,8 +18,21 @@ export interface AlertProcessingResult {
   readonly notifications: number;
 }
 
-type AlertEnv = Pick<Env, "ALERT_WEBHOOK_URL" | "ALERT_WEBHOOK_SECRET">;
+type AlertEnv = Pick<
+  Env,
+  | "ALERT_WEBHOOK_URL"
+  | "ALERT_WEBHOOK_SECRET"
+  | "ALERT_SLACK_WEBHOOK_URL"
+  | "ALERT_PAGERDUTY_ROUTING_KEY"
+  | "ALERT_EMAIL_WEBHOOK_URL"
+>;
 type AlertFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+interface DeliveryTarget {
+  readonly channel: "webhook" | "slack" | "pagerduty" | "email" | "none";
+  readonly url?: string;
+  readonly send: () => Effect.Effect<{ status: string; responseStatus?: number; error?: string }, never>;
+}
 
 function messageFromUnknown(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -41,10 +57,17 @@ function notificationId(incidentId: string, eventType: string, sentAt: string) {
   return `${incidentId}:${eventType}:${sentAt}`;
 }
 
+function notificationIdForTarget(incidentId: string, eventType: string, sentAt: string, channel: string) {
+  return `${notificationId(incidentId, eventType, sentAt)}:${channel}`;
+}
+
 export function alertConfigFromEnv(env: AlertEnv): AlertDeliveryConfig {
   return {
     webhookUrl: env.ALERT_WEBHOOK_URL?.trim() || undefined,
     webhookSecret: env.ALERT_WEBHOOK_SECRET?.trim() || undefined,
+    slackWebhookUrl: env.ALERT_SLACK_WEBHOOK_URL?.trim() || undefined,
+    pagerDutyRoutingKey: env.ALERT_PAGERDUTY_ROUTING_KEY?.trim() || undefined,
+    emailWebhookUrl: env.ALERT_EMAIL_WEBHOOK_URL?.trim() || undefined,
   };
 }
 
@@ -167,18 +190,19 @@ function recordNotification(
   tenant: TenantScope,
   incident: AlertIncident,
   eventType: string,
-  config: AlertDeliveryConfig,
+  channel: string,
+  targetUrl: string | undefined,
   sentAt: string,
   result: { status: string; responseStatus?: number; error?: string }
 ): Effect.Effect<AlertNotification, DatabaseError> {
   const notification: AlertNotification = {
-    id: notificationId(incident.id, eventType, sentAt),
+    id: notificationIdForTarget(incident.id, eventType, sentAt, channel),
     workspace_id: tenant.workspace_id,
     project_id: tenant.project_id,
     incident_id: incident.id,
     monitor_id: incident.monitor_id,
     event_type: eventType,
-    target_url: config.webhookUrl ?? null,
+    target_url: targetUrl ?? channel,
     status: result.status,
     response_status: result.responseStatus ?? null,
     error: result.error ?? null,
@@ -260,6 +284,165 @@ function deliverWebhook(
   );
 }
 
+function postJson(
+  fetcher: AlertFetch,
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {}
+): Effect.Effect<{ status: string; responseStatus?: number; error?: string }, never> {
+  return Effect.tryPromise({
+    try: async () => {
+      const response = await fetcher(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...headers,
+        },
+        body: JSON.stringify(body),
+      });
+
+      return response.ok
+        ? { status: "sent", responseStatus: response.status }
+        : { status: "failed", responseStatus: response.status, error: await response.text() };
+    },
+    catch: (error) => error,
+  }).pipe(
+    Effect.catchAll((error) => Effect.succeed({ status: "failed", error: messageFromUnknown(error) }))
+  );
+}
+
+function alertTitle(incident: AlertIncident, eventType: string) {
+  return eventType === "resolved"
+    ? `Resolved: ${incident.name}`
+    : `Alert: ${incident.name}`;
+}
+
+function alertSummary(incident: AlertIncident, evaluation: MonitorEvaluation, eventType: string) {
+  const value = evaluation.value === null ? "no data" : String(Number(evaluation.value.toFixed(3)));
+  return `${alertTitle(incident, eventType)} (${value} / threshold ${evaluation.threshold})`;
+}
+
+function deliverSlack(
+  fetcher: AlertFetch,
+  url: string,
+  incident: AlertIncident,
+  evaluation: MonitorEvaluation,
+  eventType: string
+) {
+  const emoji = eventType === "resolved" ? ":white_check_mark:" : ":rotating_light:";
+  return postJson(fetcher, url, {
+    text: `${emoji} ${alertSummary(incident, evaluation, eventType)}`,
+    blocks: [
+      {
+        type: "section",
+        text: {
+          type: "mrkdwn",
+          text: `*${alertTitle(incident, eventType)}*\n${evaluation.description}`,
+        },
+      },
+      {
+        type: "context",
+        elements: [{
+          type: "mrkdwn",
+          text: `Monitor \`${incident.monitor_id}\` · value ${evaluation.value ?? "no data"} · threshold ${evaluation.threshold}`,
+        }],
+      },
+    ],
+  });
+}
+
+function deliverPagerDuty(
+  fetcher: AlertFetch,
+  routingKey: string,
+  incident: AlertIncident,
+  evaluation: MonitorEvaluation,
+  eventType: string
+) {
+  return postJson(fetcher, "https://events.pagerduty.com/v2/enqueue", {
+    routing_key: routingKey,
+    event_action: eventType === "resolved" ? "resolve" : "trigger",
+    dedup_key: incident.id,
+    payload: eventType === "resolved"
+      ? undefined
+      : {
+          summary: alertSummary(incident, evaluation, eventType),
+          source: "pulsemon",
+          severity: "error",
+          component: incident.monitor_id,
+          group: incident.project_id,
+          class: "monitor",
+          custom_details: {
+            incident,
+            evaluation,
+          },
+        },
+  });
+}
+
+function deliverEmailWebhook(
+  fetcher: AlertFetch,
+  url: string,
+  incident: AlertIncident,
+  evaluation: MonitorEvaluation,
+  eventType: string
+) {
+  return postJson(fetcher, url, {
+    subject: alertTitle(incident, eventType),
+    text: alertSummary(incident, evaluation, eventType),
+    event_type: eventType,
+    incident,
+    evaluation,
+  });
+}
+
+function deliveryTargets(
+  fetcher: AlertFetch,
+  config: AlertDeliveryConfig,
+  incident: AlertIncident,
+  evaluation: MonitorEvaluation,
+  eventType: string
+): DeliveryTarget[] {
+  const targets: DeliveryTarget[] = [];
+
+  if (config.webhookUrl) {
+    targets.push({
+      channel: "webhook",
+      url: config.webhookUrl,
+      send: () => deliverWebhook(fetcher, config, incident, evaluation, eventType),
+    });
+  }
+  if (config.slackWebhookUrl) {
+    targets.push({
+      channel: "slack",
+      url: config.slackWebhookUrl,
+      send: () => deliverSlack(fetcher, config.slackWebhookUrl!, incident, evaluation, eventType),
+    });
+  }
+  if (config.pagerDutyRoutingKey) {
+    targets.push({
+      channel: "pagerduty",
+      url: "https://events.pagerduty.com/v2/enqueue",
+      send: () => deliverPagerDuty(fetcher, config.pagerDutyRoutingKey!, incident, evaluation, eventType),
+    });
+  }
+  if (config.emailWebhookUrl) {
+    targets.push({
+      channel: "email",
+      url: config.emailWebhookUrl,
+      send: () => deliverEmailWebhook(fetcher, config.emailWebhookUrl!, incident, evaluation, eventType),
+    });
+  }
+
+  if (targets.length === 0) {
+    targets.push({
+      channel: "none",
+      send: () => Effect.succeed({ status: "skipped" }),
+    });
+  }
+
+  return targets;
+}
+
 function notify(
   db: D1Database,
   tenant: TenantScope,
@@ -269,10 +452,14 @@ function notify(
   evaluation: MonitorEvaluation,
   eventType: string,
   sentAt: string
-): Effect.Effect<void, DatabaseError> {
+): Effect.Effect<number, DatabaseError> {
   return Effect.gen(function* () {
-    const delivery = yield* deliverWebhook(fetcher, config, incident, evaluation, eventType);
-    yield* recordNotification(db, tenant, incident, eventType, config, sentAt, delivery);
+    const targets = deliveryTargets(fetcher, config, incident, evaluation, eventType);
+    for (const target of targets) {
+      const delivery = yield* target.send();
+      yield* recordNotification(db, tenant, incident, eventType, target.channel, target.url, sentAt, delivery);
+    }
+    return targets.length;
   });
 }
 
@@ -297,15 +484,13 @@ export function processMonitorAlerts(
           yield* updateIncident(db, active, evaluation, timestamp);
         } else {
           const incident = yield* openIncident(db, tenant, evaluation, timestamp);
-          yield* notify(db, tenant, fetcher, config, incident, evaluation, "opened", timestamp);
+          notifications += yield* notify(db, tenant, fetcher, config, incident, evaluation, "opened", timestamp);
           opened += 1;
-          notifications += 1;
         }
       } else if (active && evaluation.status === "ok") {
         const incident = yield* resolveIncident(db, active, evaluation, timestamp);
-        yield* notify(db, tenant, fetcher, config, incident, evaluation, "resolved", timestamp);
+        notifications += yield* notify(db, tenant, fetcher, config, incident, evaluation, "resolved", timestamp);
         resolved += 1;
-        notifications += 1;
       }
     }
 

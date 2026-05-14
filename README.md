@@ -98,6 +98,9 @@ wrangler secret put DEFAULT_PROJECT_ID
 wrangler secret put MAINTENANCE_API_KEY
 wrangler secret put ALERT_WEBHOOK_URL
 wrangler secret put ALERT_WEBHOOK_SECRET
+wrangler secret put ALERT_SLACK_WEBHOOK_URL
+wrangler secret put ALERT_PAGERDUTY_ROUTING_KEY
+wrangler secret put ALERT_EMAIL_WEBHOOK_URL
 wrangler secret put UI_USERS
 ```
 
@@ -191,6 +194,10 @@ metric average monitors. Each evaluation is stored in `monitor_evaluations`.
 Alert incidents are opened and resolved from those evaluations in
 `alert_incidents`; when `ALERT_WEBHOOK_URL` is set, Pulsemon posts `opened` and
 `resolved` notifications and stores delivery attempts in `alert_notifications`.
+Optional fan-out channels are `ALERT_SLACK_WEBHOOK_URL` for Slack incoming
+webhooks, `ALERT_PAGERDUTY_ROUTING_KEY` for PagerDuty Events API v2
+trigger/resolve events, and `ALERT_EMAIL_WEBHOOK_URL` for email-provider webhook
+bridges.
 
 Voice sessions are available at `/voice`, `/sessions/:id`, `/api/sessions`, and
 `/api/sessions/:id`. Session detail correlates voice turns, tool calls, spans,
