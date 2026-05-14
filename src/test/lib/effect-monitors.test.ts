@@ -1,0 +1,41 @@
+import { describe, expect, it } from "bun:test";
+import { Effect } from "effect";
+import { createTestContext } from "../helpers";
+import { evaluateAndPersistRealtimeMonitors } from "@/lib/effect/monitors";
+import { DEFAULT_TENANT_SCOPE } from "@/lib/tenant";
+
+describe("Effect realtime monitors", () => {
+  it("evaluates voice and agent SLO monitors and persists snapshots", async () => {
+    const ctx = createTestContext();
+    const startedAt = new Date().toISOString();
+
+    ctx.sqlite.prepare(`
+      INSERT INTO voice_turns (
+        id, workspace_id, project_id, role, started_at, asr_latency_ms, llm_latency_ms, tts_latency_ms, interruption
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("turn-1", "default", "default", "user", startedAt, 1800, 1000, 900, 1);
+
+    ctx.sqlite.prepare(`
+      INSERT INTO agent_tool_calls (
+        id, workspace_id, project_id, tool_name, started_at, status
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run("tool-1", "default", "default", "lookup_account", startedAt, "error");
+
+    const evaluations = await Effect.runPromise(
+      evaluateAndPersistRealtimeMonitors(ctx.d1, DEFAULT_TENANT_SCOPE)
+    );
+
+    const asr = evaluations.find((item) => item.monitor_id === "voice.asr_p95_latency_ms");
+    const toolErrors = evaluations.find((item) => item.monitor_id === "agent.tool_error_rate_pct");
+
+    expect(asr?.status).toBe("alert");
+    expect(toolErrors?.status).toBe("alert");
+
+    const persisted = ctx.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM monitor_evaluations")
+      .get() as any;
+    expect(persisted.count).toBe(evaluations.length);
+  });
+});

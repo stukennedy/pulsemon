@@ -55,6 +55,14 @@ describe("Page routes", () => {
     expect(html).toContain("Voice");
   });
 
+  it("GET /monitors returns monitor evaluations page", async () => {
+    const res = await ctx.request("/monitors");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Monitors");
+    expect(html).toContain("ASR p95 latency");
+  });
+
   it("GET /connections/:id returns 200 for existing connection", async () => {
     ctx.seedConnection({ id: "conn-test-123", service: "voice-gateway" });
 

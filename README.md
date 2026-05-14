@@ -10,6 +10,7 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 - **Voice pipeline visibility** — ASR, TTS, LLM latency breakdown per stage
 - **Trace waterfall** — Jaeger-style span visualisation with parent-child nesting
 - **Faceted search** — filter by service, type, status, client, session
+- **Realtime monitors** — voice latency, interruption, agent tool error, and connection error SLO checks
 - **Real-time updates** — WebSocket-driven UI via HTMX
 
 ## Architecture
@@ -28,6 +29,11 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 | `spans` | OpenTelemetry-compatible trace spans |
 | `events` | Discrete events within connections/spans |
 | `metrics` | Time-series metrics (gauge/counter/histogram) |
+| `logs` | Structured logs correlated to traces/connections |
+| `voice_turns` | Turn-level voice state, transcripts, latency, token, and cost fields |
+| `agent_tool_calls` | Agent tool execution, retries, inputs, outputs, and errors |
+| `metric_rollups_1m` | 1-minute metric rollups produced by maintenance |
+| `monitor_evaluations` | Realtime voice/agent/connection SLO snapshots |
 
 ## Pages
 
@@ -36,6 +42,9 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 | `/` | Dashboard — live stats, latency percentiles, service overview |
 | `/connections` | Filterable connection list with faceted search |
 | `/connections/:id` | Connection detail — events timeline, spans |
+| `/logs` | Structured log browser with faceted search |
+| `/metrics` | Queryable metrics summaries and recent samples |
+| `/monitors` | Realtime voice, agent, and connection monitor evaluations |
 | `/traces` | Trace list grouped by trace ID |
 | `/traces/:id` | Waterfall trace view |
 | `/voice` | Voice pipeline view — ASR→LLM→TTS flow |
@@ -128,6 +137,11 @@ Ingest pressure controls are disabled by default. Set
 project, and scope. Set `INGEST_SAMPLE_RATE` between `0` and `1` to
 deterministically sample high-volume events, metrics, and logs while retaining
 connection and span lifecycle records.
+
+Monitor evaluations are available at `/monitors` and `/api/monitors`. They
+currently cover ASR/LLM/TTS p95 latency, voice interruption rate, agent tool
+error rate, and connection error rate over a 15-minute window, and each
+evaluation is stored in `monitor_evaluations`.
 
 ### Minimal connection example
 

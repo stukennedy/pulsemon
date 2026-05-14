@@ -150,3 +150,7 @@ Expected outcomes:
   limits by token/workspace/project/scope, deterministic sampling for
   high-volume events/metrics/logs, 429 error mapping, and maintenance cleanup
   for rate-limit counters.
+- 2026-05-14: added realtime monitor/SLO primitives for ASR/LLM/TTS p95
+  latency, voice interruption rate, agent tool error rate, and connection
+  error rate, with `/monitors`, `/api/monitors`, and persisted evaluation
+  snapshots.

@@ -5,6 +5,7 @@ const NAV_ITEMS = [
   { href: "/connections", label: "Connections", icon: "⇌" },
   { href: "/logs", label: "Logs", icon: "≡" },
   { href: "/metrics", label: "Metrics", icon: "▥" },
+  { href: "/monitors", label: "Monitors", icon: "!" },
   { href: "/traces", label: "Traces", icon: "⋮" },
   { href: "/voice", label: "Voice", icon: "◎" },
 ];
