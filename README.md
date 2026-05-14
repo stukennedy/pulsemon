@@ -420,6 +420,7 @@ await batch.flush();
 | `GET` | `/api/connections` | HTML connection table for the UI |
 | `GET` | `/api/logs` | HTML log table for the UI |
 | `GET` | `/api/metrics` | HTML metrics table for the UI |
+| `GET` | `/api/metrics/timeseries` | JSON bucketed metric series using raw samples or rollups |
 | `GET` | `/api/traces` | HTML trace table for the UI |
 | `GET` | `/api/sessions` | JSON realtime voice/agent session summaries |
 | `GET` | `/api/sessions/:id` | JSON session timeline with turns, tools, spans, logs, and events |

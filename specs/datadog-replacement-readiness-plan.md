@@ -118,3 +118,6 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: started voice/agent product UI by adding session summaries,
   `/api/sessions`, `/api/sessions/:id`, `/sessions/:id`, and a timeline that
   correlates voice turns, agent tool calls, spans, logs, and events.
+- 2026-05-14: added rollup-aware metric series querying with
+  `/api/metrics/timeseries` and a metrics-page trend chart that switches from
+  raw samples to `metric_rollups_1m` for longer windows.

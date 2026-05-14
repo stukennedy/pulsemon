@@ -4,6 +4,7 @@ import { Hono, Env } from 'hono';
 import * as api_connections from './routes/api/connections';
 import * as api_logs from './routes/api/logs';
 import * as api_metrics from './routes/api/metrics';
+import * as api_metrics_timeseries from './routes/api/metrics/timeseries';
 import * as api_monitors from './routes/api/monitors';
 import * as api_sessions from './routes/api/sessions';
 import * as api_sessions_id from './routes/api/sessions/[id]';
@@ -27,6 +28,7 @@ export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.get('/api/connections', api_connections.onRequestGet);
 	app.get('/api/logs', api_logs.onRequestGet);
 	app.get('/api/metrics', api_metrics.onRequestGet);
+	app.get('/api/metrics/timeseries', api_metrics_timeseries.onRequestGet);
 	app.get('/api/monitors', api_monitors.onRequestGet);
 	app.get('/api/sessions', api_sessions.onRequestGet);
 	app.get('/api/sessions/:id', api_sessions_id.onRequestGet);
