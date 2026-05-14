@@ -350,10 +350,12 @@ curl -s "$PULSEMON_URL/api/ingest/otlp/v1/traces" \
 ```
 
 The supported OTLP routes are `/api/ingest/otlp/v1/traces`,
-`/api/ingest/otlp/v1/metrics`, and `/api/ingest/otlp/v1/logs`. JSON request
-bodies may use `Content-Encoding: gzip`. Protobuf payloads currently return
-`415` with an explicit error so collector misconfiguration does not look like a
-schema validation failure.
+`/api/ingest/otlp/v1/metrics`, and `/api/ingest/otlp/v1/logs`. JSON and
+`application/x-protobuf` request bodies are supported, and both may use
+`Content-Encoding: gzip`. The protobuf decoder covers the standard OTLP export
+request shapes for resource spans, resource metrics, resource logs, attributes,
+timestamps, IDs, status, gauge/sum datapoints, histogram count/sum datapoints,
+and log bodies.
 
 ### Realtime voice and agent records
 

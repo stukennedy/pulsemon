@@ -30,6 +30,11 @@ import {
   postOtlpTraces as postOtlpTracesEffect,
   type OtlpDeps,
 } from "@/lib/effect/otlp";
+import {
+  decodeOtlpLogsProtobuf,
+  decodeOtlpMetricsProtobuf,
+  decodeOtlpTracesProtobuf,
+} from "@/lib/effect/otlp-protobuf";
 import { makeD1TelemetryRepository } from "@/lib/effect/repository";
 import { makeIngestPressureController } from "@/lib/effect/pressure";
 import { tenantScopeFromEnv } from "@/lib/tenant";
@@ -82,6 +87,11 @@ function isJsonContentType(contentType: string) {
     contentType.includes("text/json");
 }
 
+function isProtobufContentType(contentType: string) {
+  return contentType.includes("application/x-protobuf") ||
+    contentType.includes("application/protobuf");
+}
+
 function decodeTextBody(
   c: Context<{ Bindings: Env }>,
   encoding: string
@@ -116,6 +126,40 @@ function decodeTextBody(
   });
 }
 
+function decodeBinaryBody(
+  c: Context<{ Bindings: Env }>,
+  encoding: string
+): Effect.Effect<Uint8Array, ValidationError | UnsupportedMediaTypeError> {
+  if (!encoding || encoding === "identity") {
+    return Effect.tryPromise({
+      try: async () => new Uint8Array(await c.req.arrayBuffer()),
+      catch: () => new ValidationError({ message: "Invalid body" }),
+    });
+  }
+
+  if (encoding !== "gzip") {
+    return Effect.fail(new UnsupportedMediaTypeError({
+      message: `Unsupported content encoding: ${encoding}`,
+    }));
+  }
+
+  if (typeof DecompressionStream === "undefined") {
+    return Effect.fail(new UnsupportedMediaTypeError({
+      message: "gzip request bodies are not supported in this runtime",
+    }));
+  }
+
+  return Effect.tryPromise({
+    try: async () => {
+      const stream = c.req.raw.body;
+      if (!stream) return new Uint8Array();
+      const response = new Response(stream.pipeThrough(new DecompressionStream("gzip")));
+      return new Uint8Array(await response.arrayBuffer());
+    },
+    catch: () => new ValidationError({ message: "Invalid gzip body" }),
+  });
+}
+
 function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, ValidationError | PayloadTooLargeError | UnsupportedMediaTypeError> {
   return Effect.gen(function* () {
     const maxBytes = maxBodyBytes(c);
@@ -125,9 +169,9 @@ function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, Validat
     }
 
     const contentType = (c.req.header("content-type") ?? "").toLowerCase();
-    if (contentType.includes("application/x-protobuf")) {
+    if (isProtobufContentType(contentType)) {
       return yield* Effect.fail(new UnsupportedMediaTypeError({
-        message: "OTLP protobuf ingest is not enabled; send OTLP JSON to this endpoint",
+        message: "Protobuf ingest is only supported on OTLP routes",
       }));
     }
     if (!isJsonContentType(contentType)) {
@@ -147,6 +191,37 @@ function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, Validat
       return JSON.parse(text) as unknown;
     } catch {
       return yield* Effect.fail(new ValidationError({ message: "Invalid JSON" }));
+    }
+  });
+}
+
+function readOtlp(
+  c: Context<{ Bindings: Env }>,
+  decodeProtobuf: (bytes: Uint8Array) => unknown
+): Effect.Effect<unknown, ValidationError | PayloadTooLargeError | UnsupportedMediaTypeError> {
+  return Effect.gen(function* () {
+    const maxBytes = maxBodyBytes(c);
+    const contentLength = Number(c.req.header("content-length") ?? 0);
+    if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+      return yield* Effect.fail(new PayloadTooLargeError({ message: `Payload exceeds ${maxBytes} bytes` }));
+    }
+
+    const contentType = (c.req.header("content-type") ?? "").toLowerCase();
+    if (!isProtobufContentType(contentType)) {
+      return yield* readJson(c);
+    }
+
+    const encoding = (c.req.header("content-encoding") ?? "").toLowerCase();
+    const bytes = yield* decodeBinaryBody(c, encoding);
+    if (bytes.byteLength > maxBytes) {
+      return yield* Effect.fail(new PayloadTooLargeError({ message: `Payload exceeds ${maxBytes} bytes` }));
+    }
+
+    try {
+      return decodeProtobuf(bytes);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid OTLP protobuf";
+      return yield* Effect.fail(new ValidationError({ message: `Invalid OTLP protobuf: ${message}` }));
     }
   });
 }
@@ -235,20 +310,20 @@ export const postBatch = (c: Context<{ Bindings: Env }>) =>
 export const postOtlpTraces = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postOtlpTracesEffect(otlpDeps(c, "traces"), body))),
+    readOtlp(c, decodeOtlpTracesProtobuf).pipe(Effect.flatMap((body) => postOtlpTracesEffect(otlpDeps(c, "traces"), body))),
     201
   );
 
 export const postOtlpMetrics = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postOtlpMetricsEffect(otlpDeps(c, "metrics"), body))),
+    readOtlp(c, decodeOtlpMetricsProtobuf).pipe(Effect.flatMap((body) => postOtlpMetricsEffect(otlpDeps(c, "metrics"), body))),
     201
   );
 
 export const postOtlpLogs = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postOtlpLogsEffect(otlpDeps(c, "logs"), body))),
+    readOtlp(c, decodeOtlpLogsProtobuf).pipe(Effect.flatMap((body) => postOtlpLogsEffect(otlpDeps(c, "logs"), body))),
     201
   );

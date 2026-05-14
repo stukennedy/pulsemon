@@ -73,7 +73,8 @@ Turn monitor evaluations into actionable alerting.
 
 Make standard instrumentation work with minimal custom code.
 
-- OTLP protobuf support for traces, metrics, and logs.
+- OTLP protobuf support for traces, metrics, and logs. Initial decoder support
+  is in place for the export request shapes Pulsemon maps into native records.
 - gzip/deflate request handling where Workers supports it.
 - Better resource/scope attribute handling and semantic conventions.
 - Collector configuration examples.
@@ -140,3 +141,6 @@ Control risk in high-volume, multi-team telemetry.
   enforced before telemetry persistence.
 - 2026-05-14: added role-aware UI users, admin-only audit reads, and audit
   events for manual maintenance attempts and outcomes.
+- 2026-05-14: added OTLP protobuf request decoding for traces, metrics, and
+  logs, including resource attributes, span IDs/status, metric datapoints,
+  log bodies, and gzip-compatible binary request handling.
