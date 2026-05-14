@@ -19,6 +19,7 @@ import {
 } from "./effect/query";
 import type { QueryError } from "./effect/errors";
 import { jsxToString } from "./render";
+import { tenantScopeFromEnv } from "./tenant";
 import { ConnectionTable } from "@/components/ConnectionTable";
 import { LogTable } from "@/components/LogTable";
 import { MetricTable } from "@/components/MetricTable";
@@ -109,7 +110,7 @@ export class SearchSession extends DurableObject<Env> {
   }
 
   private queryDeps(): QueryDeps {
-    return { repository: makeD1TelemetryQueryRepository(this.env.DB) };
+    return { repository: makeD1TelemetryQueryRepository(this.env.DB, tenantScopeFromEnv(this.env)) };
   }
 
   private runQuery<A>(program: Effect.Effect<A, QueryError>): Promise<A> {

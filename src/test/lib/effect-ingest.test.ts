@@ -26,6 +26,7 @@ function deps(repository: TelemetryRepository) {
     expectedApiKey: "test-key",
     authorization: "Bearer test-key",
     requiredScope: "*",
+    defaultTenant: { workspace_id: "default", project_id: "default" },
   };
 }
 
@@ -55,6 +56,8 @@ describe("Effect ingest service", () => {
       connection_type: "ws",
       client_id: "client-1",
       status: "active",
+      workspace_id: "default",
+      project_id: "default",
     });
     expect(record.started_at.length).toBeGreaterThan(0);
   });

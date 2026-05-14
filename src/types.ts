@@ -18,11 +18,18 @@ export interface ActiveTag {
   value: string;
 }
 
+export interface TenantScope {
+  workspace_id: string;
+  project_id: string;
+}
+
 export interface Env {
   DB: D1Database;
   SEARCH_SESSION: DurableObjectNamespace;
   INGEST_API_KEY?: string;
   INGEST_API_KEYS?: string;
   INGEST_MAX_BYTES?: string;
+  DEFAULT_WORKSPACE_ID?: string;
+  DEFAULT_PROJECT_ID?: string;
   UI_BASIC_AUTH?: string;
 }

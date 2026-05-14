@@ -12,6 +12,8 @@ import type { ActiveTag } from "@/types";
 
 const connection: Connection = {
   id: "conn-1",
+  workspace_id: "default",
+  project_id: "default",
   service: "voice-gateway",
   connection_type: "ws",
   client_id: null,

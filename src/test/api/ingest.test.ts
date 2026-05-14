@@ -80,6 +80,42 @@ describe("POST /api/ingest", () => {
     expect(denied.status).toBe(401);
   });
 
+  it("assigns tenant scope from scoped ingest keys", async () => {
+    ctx = createTestContext({
+      env: {
+        INGEST_API_KEY: undefined,
+        INGEST_API_KEYS: JSON.stringify({
+          "tenant-key": {
+            scopes: ["connections"],
+            workspace_id: "acme",
+            project_id: "voice-prod",
+          },
+        }),
+      },
+    });
+
+    const res = await ctx.request("/api/ingest/connections", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer tenant-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        id: "tenant-conn-1",
+        service: "voice-gateway",
+        connection_type: "ws",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+
+    const row = ctx.sqlite
+      .prepare("SELECT workspace_id, project_id FROM connections WHERE id = ?")
+      .get("tenant-conn-1") as any;
+
+    expect(row).toEqual({ workspace_id: "acme", project_id: "voice-prod" });
+  });
+
   it("validates required connection fields", async () => {
     const res = await ctx.request("/api/ingest/connections", {
       method: "POST",

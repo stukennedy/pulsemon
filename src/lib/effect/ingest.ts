@@ -1,9 +1,9 @@
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
+import type { TenantScope } from "@/types";
+import { authorizeIngest } from "./auth";
 import {
-  MissingConfigError,
   PayloadTooLargeError,
-  UnauthorizedError,
   ValidationError,
   type IngestError,
 } from "./errors";
@@ -49,6 +49,7 @@ export interface IngestDeps {
   readonly apiKeys?: string;
   readonly authorization: string;
   readonly requiredScope: string;
+  readonly defaultTenant: TenantScope;
 }
 
 function uuid() {
@@ -57,64 +58,6 @@ function uuid() {
 
 function now() {
   return new Date().toISOString();
-}
-
-function record(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function scopesForToken(raw: string, token: string): Effect.Effect<readonly string[] | null, MissingConfigError> {
-  try {
-    const parsed = record(JSON.parse(raw));
-    if (!parsed) {
-      return Effect.fail(new MissingConfigError({ message: "Ingest API keys misconfigured" }));
-    }
-
-    const entry = parsed[token];
-    if (Array.isArray(entry)) {
-      return Effect.succeed(entry.filter((scope): scope is string => typeof scope === "string"));
-    }
-
-    const entryRecord = record(entry);
-    const scopes = entryRecord?.scopes;
-    if (Array.isArray(scopes)) {
-      return Effect.succeed(scopes.filter((scope): scope is string => typeof scope === "string"));
-    }
-
-    return Effect.succeed(null);
-  } catch {
-    return Effect.fail(new MissingConfigError({ message: "Ingest API keys misconfigured" }));
-  }
-}
-
-function authorize(deps: IngestDeps): Effect.Effect<void, MissingConfigError | UnauthorizedError> {
-  const expected = deps.expectedApiKey;
-  const token = deps.authorization.startsWith("Bearer ")
-    ? deps.authorization.slice(7).trim()
-    : "";
-
-  if (!token) {
-    return Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
-  }
-
-  if (deps.apiKeys) {
-    return Effect.gen(function* () {
-      const scopes = yield* scopesForToken(deps.apiKeys!, token);
-      if (!scopes || (!scopes.includes("*") && !scopes.includes(deps.requiredScope))) {
-        return yield* Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
-      }
-    });
-  }
-
-  if (!expected) {
-    return Effect.fail(new MissingConfigError({ message: "Ingest API not configured" }));
-  }
-
-  return token === expected
-    ? Effect.void
-    : Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
 }
 
 function decode<A, I>(
@@ -177,8 +120,9 @@ function ensureSpanUpdate(input: PatchSpanInput) {
   return Effect.void;
 }
 
-function connectionInsert(input: PostConnectionInput): ConnectionInsert {
+function connectionInsert(input: PostConnectionInput, tenant: TenantScope): ConnectionInsert {
   return {
+    ...tenant,
     id: input.id || uuid(),
     service: input.service,
     connection_type: input.connection_type,
@@ -190,8 +134,9 @@ function connectionInsert(input: PostConnectionInput): ConnectionInsert {
   };
 }
 
-function spanInsert(input: PostSpanInput): SpanInsert {
+function spanInsert(input: PostSpanInput, tenant: TenantScope): SpanInsert {
   return {
+    ...tenant,
     id: input.id || uuid(),
     trace_id: input.trace_id,
     parent_span_id: input.parent_span_id,
@@ -207,8 +152,9 @@ function spanInsert(input: PostSpanInput): SpanInsert {
   };
 }
 
-function eventInsert(input: PostEventInput): EventInsert {
+function eventInsert(input: PostEventInput, tenant: TenantScope): EventInsert {
   return {
+    ...tenant,
     id: input.id || uuid(),
     connection_id: input.connection_id,
     span_id: input.span_id,
@@ -221,8 +167,9 @@ function eventInsert(input: PostEventInput): EventInsert {
   };
 }
 
-function metricInsert(input: PostMetricInput): MetricInsert {
+function metricInsert(input: PostMetricInput, tenant: TenantScope): MetricInsert {
   return {
+    ...tenant,
     id: input.id || uuid(),
     service: input.service,
     metric_name: input.metric_name,
@@ -233,8 +180,9 @@ function metricInsert(input: PostMetricInput): MetricInsert {
   };
 }
 
-function logInsert(input: PostLogInput): LogInsert {
+function logInsert(input: PostLogInput, tenant: TenantScope): LogInsert {
   return {
+    ...tenant,
     id: input.id || uuid(),
     timestamp: input.timestamp || now(),
     level: input.level,
@@ -247,8 +195,9 @@ function logInsert(input: PostLogInput): LogInsert {
   };
 }
 
-function voiceTurnInsert(input: PostVoiceTurnInput): VoiceTurnInsert {
+function voiceTurnInsert(input: PostVoiceTurnInput, tenant: TenantScope): VoiceTurnInsert {
   return {
+    ...tenant,
     id: input.id || uuid(),
     connection_id: input.connection_id,
     session_id: input.session_id,
@@ -275,8 +224,9 @@ function voiceTurnInsert(input: PostVoiceTurnInput): VoiceTurnInsert {
   };
 }
 
-function agentToolCallInsert(input: PostAgentToolCallInput): AgentToolCallInsert {
+function agentToolCallInsert(input: PostAgentToolCallInput, tenant: TenantScope): AgentToolCallInsert {
   return {
+    ...tenant,
     id: input.id || uuid(),
     trace_id: input.trace_id,
     span_id: input.span_id,
@@ -296,31 +246,31 @@ function agentToolCallInsert(input: PostAgentToolCallInput): AgentToolCallInsert
   };
 }
 
-function normalizeBatch(input: BatchInput): TelemetryBatchWrite {
+function normalizeBatch(input: BatchInput, tenant: TenantScope): TelemetryBatchWrite {
   const connectionUpdates: ConnectionUpdate[] = [];
   for (const update of input.connection_updates ?? []) {
     if (hasConnectionUpdateFields(update)) {
-      connectionUpdates.push(update);
+      connectionUpdates.push({ ...tenant, ...update });
     }
   }
 
   const spanUpdates: SpanUpdate[] = [];
   for (const update of input.span_updates ?? []) {
     if (hasSpanUpdateFields(update)) {
-      spanUpdates.push(update);
+      spanUpdates.push({ ...tenant, ...update });
     }
   }
 
   return {
-    connections: (input.connections ?? []).map(connectionInsert),
+    connections: (input.connections ?? []).map((input) => connectionInsert(input, tenant)),
     connectionUpdates,
-    spans: (input.spans ?? []).map(spanInsert),
+    spans: (input.spans ?? []).map((input) => spanInsert(input, tenant)),
     spanUpdates,
-    events: (input.events ?? []).map(eventInsert),
-    metrics: (input.metrics ?? []).map(metricInsert),
-    logs: (input.logs ?? []).map(logInsert),
-    voiceTurns: (input.voice_turns ?? []).map(voiceTurnInsert),
-    toolCalls: (input.tool_calls ?? []).map(agentToolCallInsert),
+    events: (input.events ?? []).map((input) => eventInsert(input, tenant)),
+    metrics: (input.metrics ?? []).map((input) => metricInsert(input, tenant)),
+    logs: (input.logs ?? []).map((input) => logInsert(input, tenant)),
+    voiceTurns: (input.voice_turns ?? []).map((input) => voiceTurnInsert(input, tenant)),
+    toolCalls: (input.tool_calls ?? []).map((input) => agentToolCallInsert(input, tenant)),
   };
 }
 
@@ -357,9 +307,9 @@ export function postConnection(
   raw: unknown
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const input = yield* decode(PostConnectionInputSchema, raw);
-    const record = connectionInsert(input);
+    const record = connectionInsert(input, auth);
     yield* deps.repository.insertConnection(record);
     return { id: record.id };
   });
@@ -371,10 +321,10 @@ export function patchConnection(
   raw: unknown
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const input = yield* decode(PatchConnectionInputSchema, raw);
     yield* ensureConnectionUpdate(input);
-    yield* deps.repository.updateConnection(id, input);
+    yield* deps.repository.updateConnection(id, { ...auth, ...input });
     return { id };
   });
 }
@@ -384,9 +334,9 @@ export function postSpan(
   raw: unknown
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const input = yield* decode(PostSpanInputSchema, raw);
-    const record = spanInsert(input);
+    const record = spanInsert(input, auth);
     yield* deps.repository.insertSpan(record);
     return { id: record.id };
   });
@@ -398,10 +348,10 @@ export function patchSpan(
   raw: unknown
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const input = yield* decode(PatchSpanInputSchema, raw);
     yield* ensureSpanUpdate(input);
-    yield* deps.repository.updateSpan(id, input);
+    yield* deps.repository.updateSpan(id, { ...auth, ...input });
     return { id };
   });
 }
@@ -411,7 +361,7 @@ export function postEvents(
   raw: unknown
 ): Effect.Effect<{ count: number }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const items = yield* decodeArray(
       PostEventInputSchema,
       raw,
@@ -419,7 +369,7 @@ export function postEvents(
       500,
       "Max 500 events per request"
     );
-    const records = items.map(eventInsert);
+    const records = items.map((input) => eventInsert(input, auth));
     yield* deps.repository.insertEvents(records);
     return { count: records.length };
   });
@@ -430,7 +380,7 @@ export function postMetrics(
   raw: unknown
 ): Effect.Effect<{ count: number }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const items = yield* decodeArray(
       PostMetricInputSchema,
       raw,
@@ -438,7 +388,7 @@ export function postMetrics(
       500,
       "Max 500 metrics per request"
     );
-    const records = items.map(metricInsert);
+    const records = items.map((input) => metricInsert(input, auth));
     yield* deps.repository.insertMetrics(records);
     return { count: records.length };
   });
@@ -449,7 +399,7 @@ export function postLogs(
   raw: unknown
 ): Effect.Effect<{ count: number }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const items = yield* decodeArray(
       PostLogInputSchema,
       raw,
@@ -457,7 +407,7 @@ export function postLogs(
       1000,
       "Max 1000 logs per request"
     );
-    const records = items.map(logInsert);
+    const records = items.map((input) => logInsert(input, auth));
     yield* deps.repository.insertLogs(records);
     return { count: records.length };
   });
@@ -468,7 +418,7 @@ export function postVoiceTurns(
   raw: unknown
 ): Effect.Effect<{ count: number }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const items = yield* decodeArray(
       PostVoiceTurnInputSchema,
       raw,
@@ -476,7 +426,7 @@ export function postVoiceTurns(
       500,
       "Max 500 voice turns per request"
     );
-    const records = items.map(voiceTurnInsert);
+    const records = items.map((input) => voiceTurnInsert(input, auth));
     yield* deps.repository.insertVoiceTurns(records);
     return { count: records.length };
   });
@@ -487,7 +437,7 @@ export function postAgentToolCalls(
   raw: unknown
 ): Effect.Effect<{ count: number }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const items = yield* decodeArray(
       PostAgentToolCallInputSchema,
       raw,
@@ -495,7 +445,7 @@ export function postAgentToolCalls(
       500,
       "Max 500 tool calls per request"
     );
-    const records = items.map(agentToolCallInsert);
+    const records = items.map((input) => agentToolCallInsert(input, auth));
     yield* deps.repository.insertAgentToolCalls(records);
     return { count: records.length };
   });
@@ -506,9 +456,9 @@ export function postBatch(
   raw: unknown
 ): Effect.Effect<{ counts: Record<string, number> }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
+    const auth = yield* authorizeIngest(deps);
     const input = yield* decode(BatchInputSchema, raw);
-    const batch = normalizeBatch(input);
+    const batch = normalizeBatch(input, auth);
     const total = operationCount(batch);
 
     if (total === 0) {

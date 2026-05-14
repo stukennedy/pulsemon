@@ -56,24 +56,26 @@ export interface TestContext {
   seedConnection: (overrides?: Partial<{
     id: string; service: string; connection_type: string; client_id: string;
     session_id: string; started_at: string; duration_ms: number; status: string;
-    close_reason: string;
+    close_reason: string; workspace_id: string; project_id: string;
   }>) => void;
   seedSpan: (overrides?: Partial<{
     id: string; trace_id: string; parent_span_id: string; connection_id: string;
     service: string; operation: string; started_at: string; duration_ms: number;
-    status: string; status_message: string; attributes: string;
+    status: string; status_message: string; attributes: string; workspace_id: string; project_id: string;
   }>) => void;
   seedEvent: (overrides?: Partial<{
     id: string; connection_id: string; span_id: string; trace_id: string;
     event_type: string; timestamp: string; direction: string; size_bytes: number;
+    workspace_id: string; project_id: string;
   }>) => void;
   seedLog: (overrides?: Partial<{
     id: string; timestamp: string; level: string; service: string; message: string;
     trace_id: string; span_id: string; connection_id: string; attributes: string;
+    workspace_id: string; project_id: string;
   }>) => void;
   seedMetric: (overrides?: Partial<{
     id: string; service: string; metric_name: string; metric_type: string;
-    timestamp: string; value: number; tags: string;
+    timestamp: string; value: number; tags: string; workspace_id: string; project_id: string;
   }>) => void;
 }
 
@@ -120,10 +122,12 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
   const seedConnection = (overrides?: any) => {
     seq++;
     sqlite.prepare(`
-      INSERT INTO connections (id, service, connection_type, client_id, session_id, started_at, duration_ms, status, close_reason)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO connections (id, workspace_id, project_id, service, connection_type, client_id, session_id, started_at, duration_ms, status, close_reason)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       overrides?.id ?? `conn-${seq}`,
+      overrides?.workspace_id ?? "default",
+      overrides?.project_id ?? "default",
       overrides?.service ?? "voice-gateway",
       overrides?.connection_type ?? "ws",
       overrides?.client_id ?? `client-${seq}`,
@@ -138,10 +142,12 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
   const seedSpan = (overrides?: any) => {
     seq++;
     sqlite.prepare(`
-      INSERT INTO spans (id, trace_id, parent_span_id, connection_id, service, operation, started_at, duration_ms, status, status_message, attributes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO spans (id, workspace_id, project_id, trace_id, parent_span_id, connection_id, service, operation, started_at, duration_ms, status, status_message, attributes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       overrides?.id ?? `span-${seq}`,
+      overrides?.workspace_id ?? "default",
+      overrides?.project_id ?? "default",
       overrides?.trace_id ?? `trace-${seq}`,
       overrides?.parent_span_id ?? null,
       overrides?.connection_id ?? null,
@@ -158,10 +164,12 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
   const seedEvent = (overrides?: any) => {
     seq++;
     sqlite.prepare(`
-      INSERT INTO events (id, connection_id, span_id, trace_id, event_type, timestamp, direction, size_bytes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO events (id, workspace_id, project_id, connection_id, span_id, trace_id, event_type, timestamp, direction, size_bytes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       overrides?.id ?? `event-${seq}`,
+      overrides?.workspace_id ?? "default",
+      overrides?.project_id ?? "default",
       overrides?.connection_id ?? null,
       overrides?.span_id ?? null,
       overrides?.trace_id ?? null,
@@ -175,10 +183,12 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
   const seedLog = (overrides?: any) => {
     seq++;
     sqlite.prepare(`
-      INSERT INTO logs (id, timestamp, level, service, message, trace_id, span_id, connection_id, attributes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO logs (id, workspace_id, project_id, timestamp, level, service, message, trace_id, span_id, connection_id, attributes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       overrides?.id ?? `log-${seq}`,
+      overrides?.workspace_id ?? "default",
+      overrides?.project_id ?? "default",
       overrides?.timestamp ?? new Date(Date.now() - seq * 1000).toISOString(),
       overrides?.level ?? "info",
       overrides?.service ?? "voice-gateway",
@@ -193,10 +203,12 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
   const seedMetric = (overrides?: any) => {
     seq++;
     sqlite.prepare(`
-      INSERT INTO metrics (id, service, metric_name, metric_type, timestamp, value, tags)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO metrics (id, workspace_id, project_id, service, metric_name, metric_type, timestamp, value, tags)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       overrides?.id ?? `metric-${seq}`,
+      overrides?.workspace_id ?? "default",
+      overrides?.project_id ?? "default",
       overrides?.service ?? "voice-gateway",
       overrides?.metric_name ?? "voice.latency_ms",
       overrides?.metric_type ?? "histogram",

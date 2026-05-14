@@ -78,13 +78,37 @@ Optional production controls:
 wrangler secret put UI_BASIC_AUTH   # value format: username:password
 wrangler secret put INGEST_API_KEYS # JSON map of bearer token to scopes
 wrangler secret put INGEST_MAX_BYTES
+wrangler secret put DEFAULT_WORKSPACE_ID
+wrangler secret put DEFAULT_PROJECT_ID
 ```
 
 `UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
 `INGEST_MAX_BYTES` defaults to `1000000` bytes and rejects oversized ingest
 payloads before decoding JSON.
 `INGEST_API_KEYS` can replace `INGEST_API_KEY` when you need scoped keys, for
-example `{ "logs-token": ["logs"], "admin-token": ["*"] }`.
+example `{ "logs-token": ["logs"], "admin-token": ["*"] }`. Scoped key entries
+can also bind records to a workspace/project:
+
+```json
+{
+  "voice-prod-token": {
+    "scopes": ["connections", "traces", "logs", "metrics", "voice", "agent"],
+    "workspace_id": "acme",
+    "project_id": "voice-prod"
+  },
+  "admin-token": {
+    "scopes": ["*"],
+    "workspace_id": "acme",
+    "project_id": "voice-prod"
+  }
+}
+```
+
+Read paths are filtered by `DEFAULT_WORKSPACE_ID` and `DEFAULT_PROJECT_ID`
+(`default`/`default` when unset). Ingest records inherit the workspace/project
+from the scoped key entry, or from those defaults when using the legacy single
+`INGEST_API_KEY`. The mixed `/api/ingest/batch` endpoint requires a scoped key
+with `*`.
 
 ### Minimal connection example
 

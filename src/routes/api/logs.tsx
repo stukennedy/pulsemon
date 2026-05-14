@@ -7,6 +7,7 @@ import {
   makeD1TelemetryQueryRepository,
   queryLogs,
 } from "@/lib/effect/query";
+import { tenantScopeFromEnv } from "@/lib/tenant";
 import { LogTable } from "@/components/LogTable";
 
 function parseTags(s: string): ActiveTag[] {
@@ -20,7 +21,7 @@ function parseTags(s: string): ActiveTag[] {
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const tags = parseTags(c.req.query("tags") || "");
   const result = await Effect.runPromise(Effect.either(queryLogs(
-    { repository: makeD1TelemetryQueryRepository(c.env.DB) },
+    { repository: makeD1TelemetryQueryRepository(c.env.DB, tenantScopeFromEnv(c.env)) },
     tags
   )));
 

@@ -27,6 +27,32 @@ describe("GET /api/connections", () => {
     expect(html).toContain("2 connection");
   });
 
+  it("only returns the configured tenant scope", async () => {
+    ctx = createTestContext({
+      env: {
+        DEFAULT_WORKSPACE_ID: "acme",
+        DEFAULT_PROJECT_ID: "voice-prod",
+      },
+    });
+    ctx.seedConnection({
+      service: "voice-gateway",
+      workspace_id: "acme",
+      project_id: "voice-prod",
+    });
+    ctx.seedConnection({
+      service: "other-tenant",
+      workspace_id: "other",
+      project_id: "voice-prod",
+    });
+
+    const res = await ctx.request("/api/connections");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("voice-gateway");
+    expect(html).not.toContain("other-tenant");
+    expect(html).toContain("1 connection");
+  });
+
   it("filters by service tag", async () => {
     ctx.seedConnection({ service: "voice-gateway" });
     ctx.seedConnection({ service: "asr-service" });

@@ -140,3 +140,6 @@ Expected outcomes:
   and configurable ingest payload size limits.
 - 2026-05-14: added scoped ingest API keys through `INGEST_API_KEYS`, while
   retaining the legacy single `INGEST_API_KEY` path.
+- 2026-05-14: added workspace/project tenancy across telemetry storage,
+  ingest authorization context, query repositories, websocket sessions, and
+  docs. Existing single-tenant deployments default to `default/default`.

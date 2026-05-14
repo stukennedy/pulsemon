@@ -1,8 +1,8 @@
 import { Effect } from "effect";
+import type { TenantScope } from "@/types";
+import { authorizeIngest } from "./auth";
 import {
-  MissingConfigError,
   PayloadTooLargeError,
-  UnauthorizedError,
   ValidationError,
   type IngestError,
 } from "./errors";
@@ -20,6 +20,7 @@ export interface OtlpDeps {
   readonly apiKeys?: string;
   readonly authorization: string;
   readonly requiredScope: string;
+  readonly defaultTenant: TenantScope;
 }
 
 type OtlpRecord = Record<string, unknown>;
@@ -36,58 +37,6 @@ function asRecord(value: unknown): OtlpRecord | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as OtlpRecord
     : null;
-}
-
-function scopesForToken(raw: string, token: string): Effect.Effect<readonly string[] | null, MissingConfigError> {
-  try {
-    const parsed = asRecord(JSON.parse(raw));
-    if (!parsed) {
-      return Effect.fail(new MissingConfigError({ message: "Ingest API keys misconfigured" }));
-    }
-
-    const entry = parsed[token];
-    if (Array.isArray(entry)) {
-      return Effect.succeed(entry.filter((scope): scope is string => typeof scope === "string"));
-    }
-
-    const entryRecord = asRecord(entry);
-    const scopes = entryRecord?.scopes;
-    if (Array.isArray(scopes)) {
-      return Effect.succeed(scopes.filter((scope): scope is string => typeof scope === "string"));
-    }
-
-    return Effect.succeed(null);
-  } catch {
-    return Effect.fail(new MissingConfigError({ message: "Ingest API keys misconfigured" }));
-  }
-}
-
-function authorize(deps: OtlpDeps): Effect.Effect<void, MissingConfigError | UnauthorizedError> {
-  const expected = deps.expectedApiKey;
-  const token = deps.authorization.startsWith("Bearer ")
-    ? deps.authorization.slice(7).trim()
-    : "";
-
-  if (!token) {
-    return Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
-  }
-
-  if (deps.apiKeys) {
-    return Effect.gen(function* () {
-      const scopes = yield* scopesForToken(deps.apiKeys!, token);
-      if (!scopes || (!scopes.includes("*") && !scopes.includes(deps.requiredScope))) {
-        return yield* Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
-      }
-    });
-  }
-
-  if (!expected) {
-    return Effect.fail(new MissingConfigError({ message: "Ingest API not configured" }));
-  }
-
-  return token === expected
-    ? Effect.void
-    : Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
 }
 
 function asArray(value: unknown): unknown[] {
@@ -227,7 +176,7 @@ function ensureBatchSize(count: number): Effect.Effect<void, ValidationError | P
   return Effect.void;
 }
 
-function traceSpans(raw: unknown): SpanInsert[] {
+function traceSpans(raw: unknown, tenant: TenantScope): SpanInsert[] {
   const root = asRecord(raw);
   const records: SpanInsert[] = [];
 
@@ -248,6 +197,7 @@ function traceSpans(raw: unknown): SpanInsert[] {
 
         const spanStatus = status(spanRecord);
         records.push({
+          ...tenant,
           id,
           trace_id,
           parent_span_id: asString(spanRecord.parentSpanId),
@@ -268,7 +218,7 @@ function traceSpans(raw: unknown): SpanInsert[] {
   return records;
 }
 
-function metricRecords(raw: unknown): MetricInsert[] {
+function metricRecords(raw: unknown, tenant: TenantScope): MetricInsert[] {
   const root = asRecord(raw);
   const records: MetricInsert[] = [];
 
@@ -305,6 +255,7 @@ function metricRecords(raw: unknown): MetricInsert[] {
           if (value === undefined) continue;
 
           records.push({
+            ...tenant,
             id: uuid(),
             service,
             metric_name,
@@ -321,7 +272,7 @@ function metricRecords(raw: unknown): MetricInsert[] {
   return records;
 }
 
-function logRecords(raw: unknown): LogInsert[] {
+function logRecords(raw: unknown, tenant: TenantScope): LogInsert[] {
   const root = asRecord(raw);
   const records: LogInsert[] = [];
 
@@ -339,6 +290,7 @@ function logRecords(raw: unknown): LogInsert[] {
         if (!message) continue;
 
         records.push({
+          ...tenant,
           id: asString(logRecord.observedTimeUnixNano) ?? uuid(),
           timestamp: unixNanoToIso(logRecord.timeUnixNano ?? logRecord.observedTimeUnixNano),
           level: logLevel(logRecord),
@@ -361,8 +313,8 @@ export function postOtlpTraces(
   raw: unknown
 ): Effect.Effect<{ counts: { spans: number } }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
-    const spans = traceSpans(raw);
+    const auth = yield* authorizeIngest(deps);
+    const spans = traceSpans(raw, auth);
     yield* ensureBatchSize(spans.length);
     yield* deps.repository.writeBatch({ ...emptyBatch(), spans });
     return { counts: { spans: spans.length } };
@@ -374,8 +326,8 @@ export function postOtlpMetrics(
   raw: unknown
 ): Effect.Effect<{ counts: { metrics: number } }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
-    const metrics = metricRecords(raw);
+    const auth = yield* authorizeIngest(deps);
+    const metrics = metricRecords(raw, auth);
     yield* ensureBatchSize(metrics.length);
     yield* deps.repository.writeBatch({ ...emptyBatch(), metrics });
     return { counts: { metrics: metrics.length } };
@@ -387,8 +339,8 @@ export function postOtlpLogs(
   raw: unknown
 ): Effect.Effect<{ counts: { logs: number } }, IngestError> {
   return Effect.gen(function* () {
-    yield* authorize(deps);
-    const logs = logRecords(raw);
+    const auth = yield* authorizeIngest(deps);
+    const logs = logRecords(raw, auth);
     yield* ensureBatchSize(logs.length);
     yield* deps.repository.writeBatch({ ...emptyBatch(), logs });
     return { counts: { logs: logs.length } };

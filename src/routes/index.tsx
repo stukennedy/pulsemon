@@ -9,10 +9,11 @@ import {
   makeD1TelemetryQueryRepository,
   queryDashboardStats,
 } from "@/lib/effect/query";
+import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const result = await Effect.runPromise(Effect.either(queryDashboardStats({
-    repository: makeD1TelemetryQueryRepository(c.env.DB),
+    repository: makeD1TelemetryQueryRepository(c.env.DB, tenantScopeFromEnv(c.env)),
   })));
 
   if (Either.isLeft(result)) {

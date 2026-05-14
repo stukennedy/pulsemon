@@ -3,13 +3,26 @@ import { asc, desc, count, sql, and, or, eq } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm/column";
 import { connections, spans, events, logs, metrics } from "@/db/schema";
 import type { Connection, Span, Event, LogRecord, Metric } from "@/db/schema";
-import type { ActiveTag } from "@/types";
+import type { ActiveTag, TenantScope } from "@/types";
+import { DEFAULT_TENANT_SCOPE } from "./tenant";
 
 type FacetDefinition = {
   name: string;
   field: string;
   col: AnyColumn;
 };
+
+type TenantColumns = {
+  workspace_id: AnyColumn;
+  project_id: AnyColumn;
+};
+
+function tenantConditions(table: TenantColumns, tenant: TenantScope) {
+  return [
+    eq(table.workspace_id, tenant.workspace_id),
+    eq(table.project_id, tenant.project_id),
+  ];
+}
 
 // Connection facets
 export const CONNECTION_FACETS = [
@@ -98,13 +111,14 @@ export async function getConnectionFacetValues(
   d1: D1Database,
   facet: string,
   prefix: string,
-  activeTags: ActiveTag[]
+  activeTags: ActiveTag[],
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<string[]> {
   const f = CONNECTION_FACETS.find((x) => x.name === facet);
   if (!f) return [];
 
   const db = drizzle(d1);
-  const conditions = buildConnectionConditions(activeTags);
+  const conditions = [...tenantConditions(connections, tenant), ...buildConnectionConditions(activeTags)];
 
   if (prefix) {
     conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
@@ -126,11 +140,12 @@ export async function queryConnections(
   d1: D1Database,
   activeTags: ActiveTag[],
   limit = 100,
-  offset = 0
+  offset = 0,
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<{ connections: Connection[]; total: number }> {
   const db = drizzle(d1);
-  const conditions = buildConnectionConditions(activeTags);
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const conditions = [...tenantConditions(connections, tenant), ...buildConnectionConditions(activeTags)];
+  const where = and(...conditions);
 
   const [{ total }] = await db
     .select({ total: count() })
@@ -150,18 +165,29 @@ export async function queryConnections(
 
 export async function getConnectionDetail(
   d1: D1Database,
-  connectionId: string
+  connectionId: string,
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<{ connection: Connection | null; events: Event[]; spans: Span[] }> {
   const db = drizzle(d1);
 
-  const [conn] = await db.select().from(connections).where(eq(connections.id, connectionId)).limit(1);
+  const connectionWhere = and(
+    eq(connections.id, connectionId),
+    ...tenantConditions(connections, tenant)
+  );
+  const [conn] = await db.select().from(connections).where(connectionWhere).limit(1);
 
   const connEvents = conn
-    ? await db.select().from(events).where(eq(events.connection_id, connectionId)).orderBy(asc(events.timestamp))
+    ? await db.select().from(events).where(and(
+      eq(events.connection_id, connectionId),
+      ...tenantConditions(events, tenant)
+    )).orderBy(asc(events.timestamp))
     : [];
 
   const connSpans = conn
-    ? await db.select().from(spans).where(eq(spans.connection_id, connectionId)).orderBy(asc(spans.started_at))
+    ? await db.select().from(spans).where(and(
+      eq(spans.connection_id, connectionId),
+      ...tenantConditions(spans, tenant)
+    )).orderBy(asc(spans.started_at))
     : [];
 
   return { connection: conn || null, events: connEvents, spans: connSpans };
@@ -170,11 +196,12 @@ export async function getConnectionDetail(
 export async function querySpans(
   d1: D1Database,
   activeTags: ActiveTag[],
-  limit = 100
+  limit = 100,
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<{ spans: Span[]; total: number }> {
   const db = drizzle(d1);
-  const conditions = buildSpanConditions(activeTags);
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const conditions = [...tenantConditions(spans, tenant), ...buildSpanConditions(activeTags)];
+  const where = and(...conditions);
 
   const [{ total }] = await db.select({ total: count() }).from(spans).where(where);
 
@@ -192,11 +219,12 @@ export async function queryLogs(
   d1: D1Database,
   activeTags: ActiveTag[],
   limit = 100,
-  offset = 0
+  offset = 0,
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<{ logs: LogRecord[]; total: number }> {
   const db = drizzle(d1);
-  const conditions = buildLogConditions(activeTags);
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const conditions = [...tenantConditions(logs, tenant), ...buildLogConditions(activeTags)];
+  const where = and(...conditions);
 
   const [{ total }] = await db.select({ total: count() }).from(logs).where(where);
 
@@ -215,11 +243,12 @@ export async function queryMetrics(
   d1: D1Database,
   activeTags: ActiveTag[],
   limit = 100,
-  offset = 0
+  offset = 0,
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<{ metrics: Metric[]; total: number }> {
   const db = drizzle(d1);
-  const conditions = buildMetricConditions(activeTags);
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const conditions = [...tenantConditions(metrics, tenant), ...buildMetricConditions(activeTags)];
+  const where = and(...conditions);
 
   const [{ total }] = await db.select({ total: count() }).from(metrics).where(where);
 
@@ -248,11 +277,12 @@ export interface MetricSummary {
 
 export async function queryMetricSummaries(
   d1: D1Database,
-  activeTags: ActiveTag[]
+  activeTags: ActiveTag[],
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<MetricSummary[]> {
   const db = drizzle(d1);
-  const conditions = buildMetricConditions(activeTags);
-  const where = conditions.length > 0 ? and(...conditions) : undefined;
+  const conditions = [...tenantConditions(metrics, tenant), ...buildMetricConditions(activeTags)];
+  const where = and(...conditions);
 
   return db
     .select({
@@ -265,7 +295,9 @@ export async function queryMetricSummaries(
       max: sql<number>`COALESCE(MAX(${metrics.value}), 0)`,
       latest: sql<number>`COALESCE((
         SELECT m2.value FROM metrics m2
-        WHERE m2.service = ${metrics.service}
+        WHERE m2.workspace_id = ${tenant.workspace_id}
+          AND m2.project_id = ${tenant.project_id}
+          AND m2.service = ${metrics.service}
           AND m2.metric_name = ${metrics.metric_name}
           AND m2.metric_type = ${metrics.metric_type}
         ORDER BY m2.timestamp DESC
@@ -280,22 +312,30 @@ export async function queryMetricSummaries(
     .limit(50);
 }
 
-export async function getTraceSpans(d1: D1Database, traceId: string): Promise<Span[]> {
+export async function getTraceSpans(
+  d1: D1Database,
+  traceId: string,
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
+): Promise<Span[]> {
   const db = drizzle(d1);
-  return db.select().from(spans).where(eq(spans.trace_id, traceId)).orderBy(asc(spans.started_at));
+  return db.select().from(spans).where(and(
+    eq(spans.trace_id, traceId),
+    ...tenantConditions(spans, tenant)
+  )).orderBy(asc(spans.started_at));
 }
 
 export async function getLogFacetValues(
   d1: D1Database,
   facet: string,
   prefix: string,
-  activeTags: ActiveTag[]
+  activeTags: ActiveTag[],
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<string[]> {
   const f = LOG_FACETS.find((x) => x.name === facet);
   if (!f) return [];
 
   const db = drizzle(d1);
-  const conditions = buildLogConditions(activeTags);
+  const conditions = [...tenantConditions(logs, tenant), ...buildLogConditions(activeTags)];
 
   if (prefix) {
     conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
@@ -317,13 +357,14 @@ export async function getMetricFacetValues(
   d1: D1Database,
   facet: string,
   prefix: string,
-  activeTags: ActiveTag[]
+  activeTags: ActiveTag[],
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<string[]> {
   const f = METRIC_FACETS.find((x) => x.name === facet);
   if (!f) return [];
 
   const db = drizzle(d1);
-  const conditions = buildMetricConditions(activeTags);
+  const conditions = [...tenantConditions(metrics, tenant), ...buildMetricConditions(activeTags)];
 
   if (prefix) {
     conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
@@ -345,13 +386,14 @@ export async function getSpanFacetValues(
   d1: D1Database,
   facet: string,
   prefix: string,
-  activeTags: ActiveTag[]
+  activeTags: ActiveTag[],
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<string[]> {
   const f = SPAN_FACETS.find((x) => x.name === facet);
   if (!f) return [];
 
   const db = drizzle(d1);
-  const conditions = buildSpanConditions(activeTags);
+  const conditions = [...tenantConditions(spans, tenant), ...buildSpanConditions(activeTags)];
 
   if (prefix) {
     conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);

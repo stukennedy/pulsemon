@@ -3,6 +3,8 @@ import { sql } from "drizzle-orm";
 
 export const connections = sqliteTable("connections", {
   id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
   service: text("service").notNull(),
   connection_type: text("connection_type").notNull(), // ws, sse, grpc
   client_id: text("client_id"),
@@ -17,6 +19,8 @@ export const connections = sqliteTable("connections", {
 
 export const spans = sqliteTable("spans", {
   id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
   trace_id: text("trace_id").notNull(),
   parent_span_id: text("parent_span_id"),
   connection_id: text("connection_id"),
@@ -32,6 +36,8 @@ export const spans = sqliteTable("spans", {
 
 export const events = sqliteTable("events", {
   id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
   connection_id: text("connection_id"),
   span_id: text("span_id"),
   trace_id: text("trace_id"),
@@ -44,6 +50,8 @@ export const events = sqliteTable("events", {
 
 export const logs = sqliteTable("logs", {
   id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
   timestamp: text("timestamp").notNull().default(sql`(datetime('now'))`),
   level: text("level").notNull(),
   service: text("service").notNull(),
@@ -56,6 +64,8 @@ export const logs = sqliteTable("logs", {
 
 export const metrics = sqliteTable("metrics", {
   id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
   service: text("service").notNull(),
   metric_name: text("metric_name").notNull(),
   metric_type: text("metric_type").notNull(), // gauge, counter, histogram
@@ -66,6 +76,8 @@ export const metrics = sqliteTable("metrics", {
 
 export const voice_turns = sqliteTable("voice_turns", {
   id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
   connection_id: text("connection_id"),
   session_id: text("session_id"),
   trace_id: text("trace_id"),
@@ -92,6 +104,8 @@ export const voice_turns = sqliteTable("voice_turns", {
 
 export const agent_tool_calls = sqliteTable("agent_tool_calls", {
   id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
   trace_id: text("trace_id"),
   span_id: text("span_id"),
   connection_id: text("connection_id"),

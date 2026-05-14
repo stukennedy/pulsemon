@@ -1,6 +1,7 @@
 import { Effect } from "effect";
 import type { Connection, Event, LogRecord, Metric, Span } from "@/db/schema";
-import type { ActiveTag } from "@/types";
+import type { ActiveTag, TenantScope } from "@/types";
+import { DEFAULT_TENANT_SCOPE } from "@/lib/tenant";
 import {
   getConnectionDetail as getConnectionDetailFromD1,
   getConnectionFacetValues as getConnectionFacetValuesFromD1,
@@ -144,58 +145,61 @@ function normalizePagination(
   return Effect.succeed({ limit, offset });
 }
 
-export function makeD1TelemetryQueryRepository(d1: D1Database): TelemetryQueryRepository {
+export function makeD1TelemetryQueryRepository(
+  d1: D1Database,
+  tenant: TenantScope = DEFAULT_TENANT_SCOPE
+): TelemetryQueryRepository {
   return {
     queryConnections: (activeTags, pagination) => dbEffect(() =>
-      queryConnectionsFromD1(d1, [...activeTags], pagination.limit, pagination.offset)
+      queryConnectionsFromD1(d1, [...activeTags], pagination.limit, pagination.offset, tenant)
     ),
 
     getConnectionDetail: (connectionId) => dbEffect(() =>
-      getConnectionDetailFromD1(d1, connectionId)
+      getConnectionDetailFromD1(d1, connectionId, tenant)
     ),
 
     querySpans: (activeTags, pagination) => dbEffect(() =>
-      querySpansFromD1(d1, [...activeTags], pagination.limit)
+      querySpansFromD1(d1, [...activeTags], pagination.limit, tenant)
     ),
 
     queryLogs: (activeTags, pagination) => dbEffect(() =>
-      queryLogsFromD1(d1, [...activeTags], pagination.limit, pagination.offset)
+      queryLogsFromD1(d1, [...activeTags], pagination.limit, pagination.offset, tenant)
     ),
 
     queryMetrics: (activeTags, pagination) => dbEffect(() =>
-      queryMetricsFromD1(d1, [...activeTags], pagination.limit, pagination.offset)
+      queryMetricsFromD1(d1, [...activeTags], pagination.limit, pagination.offset, tenant)
     ),
 
     queryMetricSummaries: (activeTags) => dbEffect(() =>
-      queryMetricSummariesFromD1(d1, [...activeTags])
+      queryMetricSummariesFromD1(d1, [...activeTags], tenant)
     ),
 
     getTraceSpans: (traceId) => dbEffect(() =>
-      getTraceSpansFromD1(d1, traceId)
+      getTraceSpansFromD1(d1, traceId, tenant)
     ),
 
     getConnectionFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
-      getConnectionFacetValuesFromD1(d1, facet, prefix, [...activeTags])
+      getConnectionFacetValuesFromD1(d1, facet, prefix, [...activeTags], tenant)
     ),
 
     getSpanFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
-      getSpanFacetValuesFromD1(d1, facet, prefix, [...activeTags])
+      getSpanFacetValuesFromD1(d1, facet, prefix, [...activeTags], tenant)
     ),
 
     getLogFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
-      getLogFacetValuesFromD1(d1, facet, prefix, [...activeTags])
+      getLogFacetValuesFromD1(d1, facet, prefix, [...activeTags], tenant)
     ),
 
     getMetricFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
-      getMetricFacetValuesFromD1(d1, facet, prefix, [...activeTags])
+      getMetricFacetValuesFromD1(d1, facet, prefix, [...activeTags], tenant)
     ),
 
     queryDashboardStats: () => dbEffect(() =>
-      queryDashboardStatsFromD1(d1)
+      queryDashboardStatsFromD1(d1, tenant)
     ),
 
     queryConnectionStats: (activeTags) => dbEffect(() =>
-      queryConnectionStatsFromD1(d1, [...activeTags])
+      queryConnectionStatsFromD1(d1, [...activeTags], tenant)
     ),
   };
 }

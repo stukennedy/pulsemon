@@ -9,11 +9,12 @@ import {
   getConnectionDetail,
   makeD1TelemetryQueryRepository,
 } from "@/lib/effect/query";
+import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const id = c.req.param("id");
   const result = await Effect.runPromise(Effect.either(getConnectionDetail(
-    { repository: makeD1TelemetryQueryRepository(c.env.DB) },
+    { repository: makeD1TelemetryQueryRepository(c.env.DB, tenantScopeFromEnv(c.env)) },
     id
   )));
 

@@ -9,10 +9,11 @@ import {
   makeD1TelemetryQueryRepository,
   querySpans,
 } from "@/lib/effect/query";
+import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const result = await Effect.runPromise(Effect.either(querySpans(
-    { repository: makeD1TelemetryQueryRepository(c.env.DB) },
+    { repository: makeD1TelemetryQueryRepository(c.env.DB, tenantScopeFromEnv(c.env)) },
     [],
     { limit: 500 }
   )));

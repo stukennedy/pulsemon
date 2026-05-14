@@ -1,4 +1,5 @@
 import { Effect } from "effect";
+import type { TenantScope } from "@/types";
 import { DatabaseError } from "./errors";
 import type {
   PatchConnectionInput,
@@ -12,51 +13,51 @@ import type {
   PostVoiceTurnInput,
 } from "./schemas";
 
-export type ConnectionInsert = Omit<PostConnectionInput, "id" | "started_at" | "status"> & {
+export type ConnectionInsert = TenantScope & Omit<PostConnectionInput, "id" | "started_at" | "status"> & {
   readonly id: string;
   readonly started_at: string;
   readonly status: string;
 };
 
-export type SpanInsert = Omit<PostSpanInput, "id" | "started_at" | "status"> & {
+export type SpanInsert = TenantScope & Omit<PostSpanInput, "id" | "started_at" | "status"> & {
   readonly id: string;
   readonly started_at: string;
   readonly status: string;
 };
 
-export type EventInsert = Omit<PostEventInput, "id" | "timestamp"> & {
+export type EventInsert = TenantScope & Omit<PostEventInput, "id" | "timestamp"> & {
   readonly id: string;
   readonly timestamp: string;
 };
 
-export type MetricInsert = Omit<PostMetricInput, "id" | "timestamp"> & {
+export type MetricInsert = TenantScope & Omit<PostMetricInput, "id" | "timestamp"> & {
   readonly id: string;
   readonly timestamp: string;
 };
 
-export type LogInsert = Omit<PostLogInput, "id" | "timestamp"> & {
+export type LogInsert = TenantScope & Omit<PostLogInput, "id" | "timestamp"> & {
   readonly id: string;
   readonly timestamp: string;
 };
 
-export type VoiceTurnInsert = Omit<PostVoiceTurnInput, "id" | "started_at" | "interruption"> & {
+export type VoiceTurnInsert = TenantScope & Omit<PostVoiceTurnInput, "id" | "started_at" | "interruption"> & {
   readonly id: string;
   readonly started_at: string;
   readonly interruption: boolean;
 };
 
-export type AgentToolCallInsert = Omit<PostAgentToolCallInput, "id" | "started_at" | "status" | "retry_count"> & {
+export type AgentToolCallInsert = TenantScope & Omit<PostAgentToolCallInput, "id" | "started_at" | "status" | "retry_count"> & {
   readonly id: string;
   readonly started_at: string;
   readonly status: string;
   readonly retry_count: number;
 };
 
-export type ConnectionUpdate = PatchConnectionInput & {
+export type ConnectionUpdate = TenantScope & PatchConnectionInput & {
   readonly id: string;
 };
 
-export type SpanUpdate = PatchSpanInput & {
+export type SpanUpdate = TenantScope & PatchSpanInput & {
   readonly id: string;
 };
 
@@ -74,9 +75,9 @@ export interface TelemetryBatchWrite {
 
 export interface TelemetryRepository {
   readonly insertConnection: (input: ConnectionInsert) => Effect.Effect<void, DatabaseError>;
-  readonly updateConnection: (id: string, input: PatchConnectionInput) => Effect.Effect<void, DatabaseError>;
+  readonly updateConnection: (id: string, input: PatchConnectionInput & TenantScope) => Effect.Effect<void, DatabaseError>;
   readonly insertSpan: (input: SpanInsert) => Effect.Effect<void, DatabaseError>;
-  readonly updateSpan: (id: string, input: PatchSpanInput) => Effect.Effect<void, DatabaseError>;
+  readonly updateSpan: (id: string, input: PatchSpanInput & TenantScope) => Effect.Effect<void, DatabaseError>;
   readonly insertEvents: (input: readonly EventInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly insertMetrics: (input: readonly MetricInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly insertLogs: (input: readonly LogInsert[]) => Effect.Effect<void, DatabaseError>;
@@ -111,11 +112,13 @@ function dbEffect<A>(thunk: () => Promise<A>): Effect.Effect<A, DatabaseError> {
 
 function bindConnectionInsert(db: D1Database, input: ConnectionInsert) {
   return db.prepare(
-    `INSERT INTO connections (id, service, connection_type, client_id, session_id, started_at, status, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO connections (id, workspace_id, project_id, service, connection_type, client_id, session_id, started_at, status, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
+    input.workspace_id,
+    input.project_id,
     input.service,
     input.connection_type,
     input.client_id ?? null,
@@ -126,7 +129,7 @@ function bindConnectionInsert(db: D1Database, input: ConnectionInsert) {
   );
 }
 
-function bindConnectionUpdate(db: D1Database, id: string, input: PatchConnectionInput) {
+function bindConnectionUpdate(db: D1Database, id: string, input: PatchConnectionInput & TenantScope) {
   const fields: string[] = [];
   const values: unknown[] = [];
   if (input.ended_at !== undefined) { fields.push("ended_at = ?"); values.push(input.ended_at); }
@@ -135,17 +138,21 @@ function bindConnectionUpdate(db: D1Database, id: string, input: PatchConnection
   if (input.status !== undefined) { fields.push("status = ?"); values.push(input.status); }
   if (input.metadata !== undefined) { fields.push("metadata = ?"); values.push(requiredJson(input.metadata)); }
   if (fields.length === 0) return null;
-  values.push(id);
-  return db.prepare(`UPDATE connections SET ${fields.join(", ")} WHERE id = ?`).bind(...values);
+  values.push(id, input.workspace_id, input.project_id);
+  return db.prepare(
+    `UPDATE connections SET ${fields.join(", ")} WHERE id = ? AND workspace_id = ? AND project_id = ?`
+  ).bind(...values);
 }
 
 function bindSpanInsert(db: D1Database, input: SpanInsert) {
   return db.prepare(
-    `INSERT INTO spans (id, trace_id, parent_span_id, connection_id, service, operation, started_at, ended_at, duration_ms, status, status_message, attributes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO spans (id, workspace_id, project_id, trace_id, parent_span_id, connection_id, service, operation, started_at, ended_at, duration_ms, status, status_message, attributes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
+    input.workspace_id,
+    input.project_id,
     input.trace_id,
     input.parent_span_id ?? null,
     input.connection_id ?? null,
@@ -160,7 +167,7 @@ function bindSpanInsert(db: D1Database, input: SpanInsert) {
   );
 }
 
-function bindSpanUpdate(db: D1Database, id: string, input: PatchSpanInput) {
+function bindSpanUpdate(db: D1Database, id: string, input: PatchSpanInput & TenantScope) {
   const fields: string[] = [];
   const values: unknown[] = [];
   if (input.ended_at !== undefined) { fields.push("ended_at = ?"); values.push(input.ended_at); }
@@ -169,17 +176,21 @@ function bindSpanUpdate(db: D1Database, id: string, input: PatchSpanInput) {
   if (input.status_message !== undefined) { fields.push("status_message = ?"); values.push(input.status_message); }
   if (input.attributes !== undefined) { fields.push("attributes = ?"); values.push(requiredJson(input.attributes)); }
   if (fields.length === 0) return null;
-  values.push(id);
-  return db.prepare(`UPDATE spans SET ${fields.join(", ")} WHERE id = ?`).bind(...values);
+  values.push(id, input.workspace_id, input.project_id);
+  return db.prepare(
+    `UPDATE spans SET ${fields.join(", ")} WHERE id = ? AND workspace_id = ? AND project_id = ?`
+  ).bind(...values);
 }
 
 function bindEventInsert(db: D1Database, input: EventInsert) {
   return db.prepare(
-    `INSERT INTO events (id, connection_id, span_id, trace_id, event_type, timestamp, data, direction, size_bytes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO events (id, workspace_id, project_id, connection_id, span_id, trace_id, event_type, timestamp, data, direction, size_bytes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
+    input.workspace_id,
+    input.project_id,
     input.connection_id ?? null,
     input.span_id ?? null,
     input.trace_id ?? null,
@@ -193,11 +204,13 @@ function bindEventInsert(db: D1Database, input: EventInsert) {
 
 function bindMetricInsert(db: D1Database, input: MetricInsert) {
   return db.prepare(
-    `INSERT INTO metrics (id, service, metric_name, metric_type, timestamp, value, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO metrics (id, workspace_id, project_id, service, metric_name, metric_type, timestamp, value, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
+    input.workspace_id,
+    input.project_id,
     input.service,
     input.metric_name,
     input.metric_type,
@@ -209,11 +222,13 @@ function bindMetricInsert(db: D1Database, input: MetricInsert) {
 
 function bindLogInsert(db: D1Database, input: LogInsert) {
   return db.prepare(
-    `INSERT INTO logs (id, timestamp, level, service, message, trace_id, span_id, connection_id, attributes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO logs (id, workspace_id, project_id, timestamp, level, service, message, trace_id, span_id, connection_id, attributes)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
+    input.workspace_id,
+    input.project_id,
     input.timestamp,
     input.level,
     input.service,
@@ -227,11 +242,13 @@ function bindLogInsert(db: D1Database, input: LogInsert) {
 
 function bindVoiceTurnInsert(db: D1Database, input: VoiceTurnInsert) {
   return db.prepare(
-    `INSERT INTO voice_turns (id, connection_id, session_id, trace_id, turn_index, role, started_at, ended_at, duration_ms, transcript, transcript_confidence, vad_start_ms, vad_end_ms, interruption, audio_latency_ms, asr_latency_ms, llm_latency_ms, tts_latency_ms, input_tokens, output_tokens, cost_usd, state, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO voice_turns (id, workspace_id, project_id, connection_id, session_id, trace_id, turn_index, role, started_at, ended_at, duration_ms, transcript, transcript_confidence, vad_start_ms, vad_end_ms, interruption, audio_latency_ms, asr_latency_ms, llm_latency_ms, tts_latency_ms, input_tokens, output_tokens, cost_usd, state, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
+    input.workspace_id,
+    input.project_id,
     input.connection_id ?? null,
     input.session_id ?? null,
     input.trace_id ?? null,
@@ -267,11 +284,13 @@ function structuredJson(value: unknown): string | null {
 
 function bindAgentToolCallInsert(db: D1Database, input: AgentToolCallInsert) {
   return db.prepare(
-    `INSERT INTO agent_tool_calls (id, trace_id, span_id, connection_id, session_id, turn_id, tool_name, started_at, ended_at, duration_ms, status, retry_count, input, output, error, metadata)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO agent_tool_calls (id, workspace_id, project_id, trace_id, span_id, connection_id, session_id, turn_id, tool_name, started_at, ended_at, duration_ms, status, retry_count, input, output, error, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO NOTHING`
   ).bind(
     input.id,
+    input.workspace_id,
+    input.project_id,
     input.trace_id ?? null,
     input.span_id ?? null,
     input.connection_id ?? null,
