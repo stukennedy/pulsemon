@@ -1,6 +1,11 @@
 import type { Context } from "hono";
 import type { Env } from "@/types";
 
+export interface UiPrincipal {
+  readonly username: string;
+  readonly role: "admin" | "viewer";
+}
+
 /**
  * Validates the Bearer token on ingest endpoints.
  * Returns 401 if no INGEST_API_KEY is configured (misconfigured deploy)
@@ -19,18 +24,115 @@ export function checkApiKey(c: Context<{ Bindings: Env }>): Response | null {
   return null;
 }
 
+function isUiAuthConfigured(c: Context<{ Bindings: Env }>) {
+  return Boolean(c.env.UI_USERS || c.env.UI_BASIC_AUTH);
+}
+
+function basicCredentials(c: Context<{ Bindings: Env }>): { username: string; password: string } | null {
+  const auth = c.req.header("Authorization") ?? "";
+  const encoded = auth.startsWith("Basic ") ? auth.slice(6).trim() : "";
+  if (!encoded) return null;
+
+  try {
+    const decoded = atob(encoded);
+    const separator = decoded.indexOf(":");
+    if (separator <= 0) return null;
+    return {
+      username: decoded.slice(0, separator),
+      password: decoded.slice(separator + 1),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function roleValue(value: unknown): "admin" | "viewer" {
+  return value === "admin" ? "admin" : "viewer";
+}
+
+function principalFromUiUsers(
+  raw: string | undefined,
+  credentials: { username: string; password: string } | null
+): UiPrincipal | null {
+  if (!raw || !credentials) return null;
+
+  try {
+    const users = record(JSON.parse(raw));
+    const entry = record(users?.[credentials.username]);
+    if (entry) {
+      const password = typeof entry.password === "string" ? entry.password : "";
+      if (password === credentials.password) {
+        return {
+          username: credentials.username,
+          role: roleValue(entry.role),
+        };
+      }
+      return null;
+    }
+
+    const legacyPassword = users?.[credentials.username];
+    if (typeof legacyPassword === "string" && legacyPassword === credentials.password) {
+      return { username: credentials.username, role: "viewer" };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function principalFromLegacyBasicAuth(
+  expected: string | undefined,
+  credentials: { username: string; password: string } | null
+): UiPrincipal | null {
+  if (!expected || !credentials) return null;
+  return `${credentials.username}:${credentials.password}` === expected
+    ? { username: credentials.username, role: "admin" }
+    : null;
+}
+
+export function uiPrincipalFromRequest(c: Context<{ Bindings: Env }>): UiPrincipal | null {
+  const credentials = basicCredentials(c);
+  return principalFromUiUsers(c.env.UI_USERS, credentials)
+    ?? principalFromLegacyBasicAuth(c.env.UI_BASIC_AUTH, credentials);
+}
+
+export function requireAdminUi(c: Context<{ Bindings: Env }>): UiPrincipal | Response {
+  if (!isUiAuthConfigured(c)) {
+    return c.json({ error: "Admin UI auth not configured" }, 503);
+  }
+
+  const principal = uiPrincipalFromRequest(c);
+  if (!principal) {
+    return new Response("Unauthorized", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": 'Basic realm="pulsemon"',
+      },
+    });
+  }
+
+  if (principal.role !== "admin") {
+    return c.json({ error: "Forbidden" }, 403);
+  }
+
+  return principal;
+}
+
 export function checkUiAuth(c: Context<{ Bindings: Env }>): Response | null {
-  const expected = c.env.UI_BASIC_AUTH;
-  if (!expected) return null;
+  if (!isUiAuthConfigured(c)) return null;
 
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/api/ingest")) return null;
+  if (path === "/api/admin/maintenance") return null;
 
-  const auth = c.req.header("Authorization") ?? "";
-  const encoded = auth.startsWith("Basic ") ? auth.slice(6).trim() : "";
-  const credentials = encoded ? atob(encoded) : "";
-
-  if (credentials === expected) return null;
+  if (uiPrincipalFromRequest(c)) return null;
 
   return new Response("Unauthorized", {
     status: 401,

@@ -1,5 +1,6 @@
 export type {
   AgentToolCall,
+  AuditEvent,
   Connection,
   Event,
   LogRecord,
@@ -48,4 +49,5 @@ export interface Env {
   ALERT_WEBHOOK_URL?: string;
   ALERT_WEBHOOK_SECRET?: string;
   UI_BASIC_AUTH?: string;
+  UI_USERS?: string;
 }

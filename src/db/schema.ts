@@ -201,6 +201,21 @@ export const alert_notifications = sqliteTable("alert_notifications", {
   sent_at: text("sent_at").notNull(),
 });
 
+export const audit_events = sqliteTable("audit_events", {
+  id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  actor: text("actor").notNull(),
+  actor_role: text("actor_role").notNull(),
+  action: text("action").notNull(),
+  outcome: text("outcome").notNull(),
+  target: text("target"),
+  ip: text("ip"),
+  user_agent: text("user_agent"),
+  metadata: text("metadata"),
+  created_at: text("created_at").notNull(),
+});
+
 export type Connection = typeof connections.$inferSelect;
 export type Span = typeof spans.$inferSelect;
 export type Event = typeof events.$inferSelect;
@@ -214,3 +229,4 @@ export type IngestCardinalityValue = typeof ingest_cardinality_values.$inferSele
 export type MonitorEvaluationRecord = typeof monitor_evaluations.$inferSelect;
 export type AlertIncident = typeof alert_incidents.$inferSelect;
 export type AlertNotification = typeof alert_notifications.$inferSelect;
+export type AuditEvent = typeof audit_events.$inferSelect;

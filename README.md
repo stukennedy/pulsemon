@@ -98,9 +98,20 @@ wrangler secret put DEFAULT_PROJECT_ID
 wrangler secret put MAINTENANCE_API_KEY
 wrangler secret put ALERT_WEBHOOK_URL
 wrangler secret put ALERT_WEBHOOK_SECRET
+wrangler secret put UI_USERS
 ```
 
 `UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
+`UI_USERS` can replace it with role-aware Basic auth. Admin routes require an
+`admin` role; `viewer` users can read the UI but cannot run admin actions:
+
+```json
+{
+  "alice": { "password": "secret", "role": "admin" },
+  "bob": { "password": "readonly", "role": "viewer" }
+}
+```
+
 `INGEST_MAX_BYTES` defaults to `1000000` bytes and rejects oversized ingest
 payloads before decoding JSON.
 `INGEST_API_KEYS` can replace `INGEST_API_KEY` when you need scoped keys, for
@@ -139,6 +150,9 @@ RETENTION_DAYS=30
 METRIC_ROLLUP_AFTER_MINUTES=5
 METRIC_ROLLUP_RETENTION_DAYS=365
 ```
+
+Manual maintenance attempts are stored in `audit_events`; admin users can read
+recent audit entries from `/api/admin/audit`.
 
 Ingest pressure controls are disabled by default. Set
 `INGEST_RATE_LIMIT_PER_MINUTE` to cap requests per bearer token, workspace,
@@ -460,6 +474,7 @@ await batch.flush();
 | `GET` | `/api/sessions` | JSON realtime voice/agent session summaries |
 | `GET` | `/api/sessions/:id` | JSON session timeline with turns, tools, spans, logs, and events |
 | `GET` | `/api/monitors` | JSON realtime monitor evaluations |
+| `GET` | `/api/admin/audit` | JSON audit events for admin users |
 
 `connections` and `spans` inserts are idempotent by `id`: duplicate IDs are
 ignored. Use the `PATCH` endpoints when a connection or span changes state after
