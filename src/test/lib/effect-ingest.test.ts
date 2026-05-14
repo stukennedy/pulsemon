@@ -13,6 +13,8 @@ function createRepository(overrides: Partial<TelemetryRepository> = {}): Telemet
     insertEvents: () => Effect.void,
     insertMetrics: () => Effect.void,
     insertLogs: () => Effect.void,
+    insertVoiceTurns: () => Effect.void,
+    insertAgentToolCalls: () => Effect.void,
     writeBatch: () => Effect.void,
     ...overrides,
   };

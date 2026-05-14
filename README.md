@@ -230,6 +230,29 @@ curl -s "$PULSEMON_URL/api/ingest/otlp/v1/traces" \
 The supported OTLP routes are `/api/ingest/otlp/v1/traces`,
 `/api/ingest/otlp/v1/metrics`, and `/api/ingest/otlp/v1/logs`.
 
+### Realtime voice and agent records
+
+For realtime voice and agentic applications, Pulsemon has dedicated records for
+turn-level voice state and tool calls:
+
+```bash
+curl -s "$PULSEMON_URL/api/ingest/voice/turns" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection_id": "'"$CONNECTION_ID"'",
+    "session_id": "demo-session",
+    "trace_id": "'"$TRACE_ID"'",
+    "turn_index": 1,
+    "role": "user",
+    "transcript": "what is my account balance",
+    "transcript_confidence": 0.96,
+    "vad_start_ms": 120,
+    "vad_end_ms": 1540,
+    "asr_latency_ms": 240
+  }'
+```
+
 ### Instrumenting an app
 
 A small wrapper is enough for most services:
@@ -316,6 +339,8 @@ For high-volume services, buffer records and flush them through
 | `POST` | `/api/ingest/events` | Record one event or up to 500 events |
 | `POST` | `/api/ingest/metrics` | Record one metric or up to 500 metrics |
 | `POST` | `/api/ingest/logs` | Record one log or up to 1000 logs |
+| `POST` | `/api/ingest/voice/turns` | Record voice turns with VAD, transcript, latency, token, and cost fields |
+| `POST` | `/api/ingest/agent/tool-calls` | Record agent tool calls, retries, inputs, outputs, and errors |
 | `POST` | `/api/ingest/batch` | Record up to 1000 mixed operations |
 | `POST` | `/api/ingest/otlp/v1/traces` | Translate OTLP JSON traces into spans |
 | `POST` | `/api/ingest/otlp/v1/metrics` | Translate OTLP JSON metrics into samples |

@@ -3,11 +3,13 @@ import { DatabaseError } from "./errors";
 import type {
   PatchConnectionInput,
   PatchSpanInput,
+  PostAgentToolCallInput,
   PostConnectionInput,
   PostEventInput,
   PostLogInput,
   PostMetricInput,
   PostSpanInput,
+  PostVoiceTurnInput,
 } from "./schemas";
 
 export type ConnectionInsert = Omit<PostConnectionInput, "id" | "started_at" | "status"> & {
@@ -37,6 +39,19 @@ export type LogInsert = Omit<PostLogInput, "id" | "timestamp"> & {
   readonly timestamp: string;
 };
 
+export type VoiceTurnInsert = Omit<PostVoiceTurnInput, "id" | "started_at" | "interruption"> & {
+  readonly id: string;
+  readonly started_at: string;
+  readonly interruption: boolean;
+};
+
+export type AgentToolCallInsert = Omit<PostAgentToolCallInput, "id" | "started_at" | "status" | "retry_count"> & {
+  readonly id: string;
+  readonly started_at: string;
+  readonly status: string;
+  readonly retry_count: number;
+};
+
 export type ConnectionUpdate = PatchConnectionInput & {
   readonly id: string;
 };
@@ -53,6 +68,8 @@ export interface TelemetryBatchWrite {
   readonly events: readonly EventInsert[];
   readonly metrics: readonly MetricInsert[];
   readonly logs: readonly LogInsert[];
+  readonly voiceTurns: readonly VoiceTurnInsert[];
+  readonly toolCalls: readonly AgentToolCallInsert[];
 }
 
 export interface TelemetryRepository {
@@ -63,6 +80,8 @@ export interface TelemetryRepository {
   readonly insertEvents: (input: readonly EventInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly insertMetrics: (input: readonly MetricInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly insertLogs: (input: readonly LogInsert[]) => Effect.Effect<void, DatabaseError>;
+  readonly insertVoiceTurns: (input: readonly VoiceTurnInsert[]) => Effect.Effect<void, DatabaseError>;
+  readonly insertAgentToolCalls: (input: readonly AgentToolCallInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly writeBatch: (input: TelemetryBatchWrite) => Effect.Effect<void, DatabaseError>;
 }
 
@@ -206,6 +225,71 @@ function bindLogInsert(db: D1Database, input: LogInsert) {
   );
 }
 
+function bindVoiceTurnInsert(db: D1Database, input: VoiceTurnInsert) {
+  return db.prepare(
+    `INSERT INTO voice_turns (id, connection_id, session_id, trace_id, turn_index, role, started_at, ended_at, duration_ms, transcript, transcript_confidence, vad_start_ms, vad_end_ms, interruption, audio_latency_ms, asr_latency_ms, llm_latency_ms, tts_latency_ms, input_tokens, output_tokens, cost_usd, state, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO NOTHING`
+  ).bind(
+    input.id,
+    input.connection_id ?? null,
+    input.session_id ?? null,
+    input.trace_id ?? null,
+    input.turn_index ?? null,
+    input.role,
+    input.started_at,
+    input.ended_at ?? null,
+    input.duration_ms ?? null,
+    input.transcript ?? null,
+    input.transcript_confidence ?? null,
+    input.vad_start_ms ?? null,
+    input.vad_end_ms ?? null,
+    input.interruption ? 1 : 0,
+    input.audio_latency_ms ?? null,
+    input.asr_latency_ms ?? null,
+    input.llm_latency_ms ?? null,
+    input.tts_latency_ms ?? null,
+    input.input_tokens ?? null,
+    input.output_tokens ?? null,
+    input.cost_usd ?? null,
+    input.state ?? null,
+    optionalJson(input.metadata)
+  );
+}
+
+function structuredJson(value: unknown): string | null {
+  return value === undefined || value === null
+    ? null
+    : typeof value === "string"
+      ? value
+      : JSON.stringify(value);
+}
+
+function bindAgentToolCallInsert(db: D1Database, input: AgentToolCallInsert) {
+  return db.prepare(
+    `INSERT INTO agent_tool_calls (id, trace_id, span_id, connection_id, session_id, turn_id, tool_name, started_at, ended_at, duration_ms, status, retry_count, input, output, error, metadata)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO NOTHING`
+  ).bind(
+    input.id,
+    input.trace_id ?? null,
+    input.span_id ?? null,
+    input.connection_id ?? null,
+    input.session_id ?? null,
+    input.turn_id ?? null,
+    input.tool_name,
+    input.started_at,
+    input.ended_at ?? null,
+    input.duration_ms ?? null,
+    input.status,
+    input.retry_count,
+    structuredJson(input.input),
+    structuredJson(input.output),
+    input.error ?? null,
+    optionalJson(input.metadata)
+  );
+}
+
 export function makeD1TelemetryRepository(db: D1Database): TelemetryRepository {
   return {
     insertConnection: (input) => dbEffect(() => bindConnectionInsert(db, input).run()).pipe(
@@ -240,6 +324,14 @@ export function makeD1TelemetryRepository(db: D1Database): TelemetryRepository {
       db.batch(input.map((log) => bindLogInsert(db, log)))
     ).pipe(Effect.asVoid),
 
+    insertVoiceTurns: (input) => dbEffect(() =>
+      db.batch(input.map((turn) => bindVoiceTurnInsert(db, turn)))
+    ).pipe(Effect.asVoid),
+
+    insertAgentToolCalls: (input) => dbEffect(() =>
+      db.batch(input.map((call) => bindAgentToolCallInsert(db, call)))
+    ).pipe(Effect.asVoid),
+
     writeBatch: (input) => {
       const stmts: D1PreparedStatement[] = [
         ...input.connections.map((conn) => bindConnectionInsert(db, conn)),
@@ -255,6 +347,8 @@ export function makeD1TelemetryRepository(db: D1Database): TelemetryRepository {
         ...input.events.map((event) => bindEventInsert(db, event)),
         ...input.metrics.map((metric) => bindMetricInsert(db, metric)),
         ...input.logs.map((log) => bindLogInsert(db, log)),
+        ...input.voiceTurns.map((turn) => bindVoiceTurnInsert(db, turn)),
+        ...input.toolCalls.map((call) => bindAgentToolCallInsert(db, call)),
       ];
 
       return dbEffect(() => db.batch(stmts)).pipe(Effect.asVoid);

@@ -31,6 +31,8 @@ export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.post('/api/ingest/events', ingest.postEvents);
 	app.post('/api/ingest/metrics', ingest.postMetrics);
 	app.post('/api/ingest/logs', ingest.postLogs);
+	app.post('/api/ingest/voice/turns', ingest.postVoiceTurns);
+	app.post('/api/ingest/agent/tool-calls', ingest.postAgentToolCalls);
 	app.post('/api/ingest/batch', ingest.postBatch);
 	app.post('/api/ingest/otlp/v1/traces', ingest.postOtlpTraces);
 	app.post('/api/ingest/otlp/v1/metrics', ingest.postOtlpMetrics);

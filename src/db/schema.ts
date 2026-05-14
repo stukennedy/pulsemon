@@ -64,8 +64,55 @@ export const metrics = sqliteTable("metrics", {
   tags: text("tags"), // JSON
 });
 
+export const voice_turns = sqliteTable("voice_turns", {
+  id: text("id").primaryKey(),
+  connection_id: text("connection_id"),
+  session_id: text("session_id"),
+  trace_id: text("trace_id"),
+  turn_index: integer("turn_index"),
+  role: text("role").notNull(),
+  started_at: text("started_at").notNull().default(sql`(datetime('now'))`),
+  ended_at: text("ended_at"),
+  duration_ms: integer("duration_ms"),
+  transcript: text("transcript"),
+  transcript_confidence: real("transcript_confidence"),
+  vad_start_ms: integer("vad_start_ms"),
+  vad_end_ms: integer("vad_end_ms"),
+  interruption: integer("interruption").notNull().default(0),
+  audio_latency_ms: integer("audio_latency_ms"),
+  asr_latency_ms: integer("asr_latency_ms"),
+  llm_latency_ms: integer("llm_latency_ms"),
+  tts_latency_ms: integer("tts_latency_ms"),
+  input_tokens: integer("input_tokens"),
+  output_tokens: integer("output_tokens"),
+  cost_usd: real("cost_usd"),
+  state: text("state"),
+  metadata: text("metadata"),
+});
+
+export const agent_tool_calls = sqliteTable("agent_tool_calls", {
+  id: text("id").primaryKey(),
+  trace_id: text("trace_id"),
+  span_id: text("span_id"),
+  connection_id: text("connection_id"),
+  session_id: text("session_id"),
+  turn_id: text("turn_id"),
+  tool_name: text("tool_name").notNull(),
+  started_at: text("started_at").notNull().default(sql`(datetime('now'))`),
+  ended_at: text("ended_at"),
+  duration_ms: integer("duration_ms"),
+  status: text("status").notNull().default("ok"),
+  retry_count: integer("retry_count").notNull().default(0),
+  input: text("input"),
+  output: text("output"),
+  error: text("error"),
+  metadata: text("metadata"),
+});
+
 export type Connection = typeof connections.$inferSelect;
 export type Span = typeof spans.$inferSelect;
 export type Event = typeof events.$inferSelect;
 export type LogRecord = typeof logs.$inferSelect;
 export type Metric = typeof metrics.$inferSelect;
+export type VoiceTurn = typeof voice_turns.$inferSelect;
+export type AgentToolCall = typeof agent_tool_calls.$inferSelect;

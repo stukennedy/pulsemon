@@ -1,4 +1,12 @@
-export type { Connection, Span, Event, LogRecord, Metric } from "@/db/schema";
+export type {
+  AgentToolCall,
+  Connection,
+  Event,
+  LogRecord,
+  Metric,
+  Span,
+  VoiceTurn,
+} from "@/db/schema";
 
 export interface Facet {
   name: string;

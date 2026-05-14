@@ -10,12 +10,14 @@ import {
 import {
   patchConnection as patchConnectionEffect,
   patchSpan as patchSpanEffect,
+  postAgentToolCalls as postAgentToolCallsEffect,
   postBatch as postBatchEffect,
   postConnection as postConnectionEffect,
   postEvents as postEventsEffect,
   postLogs as postLogsEffect,
   postMetrics as postMetricsEffect,
   postSpan as postSpanEffect,
+  postVoiceTurns as postVoiceTurnsEffect,
   type IngestDeps,
 } from "@/lib/effect/ingest";
 import {
@@ -108,6 +110,20 @@ export const postLogs = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
     readJson(c).pipe(Effect.flatMap((body) => postLogsEffect(deps(c), body))),
+    201
+  );
+
+export const postVoiceTurns = (c: Context<{ Bindings: Env }>) =>
+  runJson(
+    c,
+    readJson(c).pipe(Effect.flatMap((body) => postVoiceTurnsEffect(deps(c), body))),
+    201
+  );
+
+export const postAgentToolCalls = (c: Context<{ Bindings: Env }>) =>
+  runJson(
+    c,
+    readJson(c).pipe(Effect.flatMap((body) => postAgentToolCallsEffect(deps(c), body))),
     201
   );
 

@@ -175,6 +175,8 @@ function emptyBatch(): TelemetryBatchWrite {
     events: [],
     metrics: [],
     logs: [],
+    voiceTurns: [],
+    toolCalls: [],
   };
 }
 

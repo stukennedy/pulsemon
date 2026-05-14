@@ -8,6 +8,7 @@ import {
   type IngestError,
 } from "./errors";
 import type {
+  AgentToolCallInsert,
   ConnectionInsert,
   ConnectionUpdate,
   EventInsert,
@@ -17,24 +18,29 @@ import type {
   SpanUpdate,
   TelemetryBatchWrite,
   TelemetryRepository,
+  VoiceTurnInsert,
 } from "./repository";
 import {
   BatchInputSchema,
   PatchConnectionInputSchema,
   PatchSpanInputSchema,
+  PostAgentToolCallInputSchema,
   PostConnectionInputSchema,
   PostEventInputSchema,
   PostLogInputSchema,
   PostMetricInputSchema,
   PostSpanInputSchema,
+  PostVoiceTurnInputSchema,
   type BatchInput,
   type PatchConnectionInput,
   type PatchSpanInput,
+  type PostAgentToolCallInput,
   type PostConnectionInput,
   type PostEventInput,
   type PostLogInput,
   type PostMetricInput,
   type PostSpanInput,
+  type PostVoiceTurnInput,
 } from "./schemas";
 
 export interface IngestDeps {
@@ -198,6 +204,55 @@ function logInsert(input: PostLogInput): LogInsert {
   };
 }
 
+function voiceTurnInsert(input: PostVoiceTurnInput): VoiceTurnInsert {
+  return {
+    id: input.id || uuid(),
+    connection_id: input.connection_id,
+    session_id: input.session_id,
+    trace_id: input.trace_id,
+    turn_index: input.turn_index,
+    role: input.role,
+    started_at: input.started_at || now(),
+    ended_at: input.ended_at,
+    duration_ms: input.duration_ms,
+    transcript: input.transcript,
+    transcript_confidence: input.transcript_confidence,
+    vad_start_ms: input.vad_start_ms,
+    vad_end_ms: input.vad_end_ms,
+    interruption: input.interruption ?? false,
+    audio_latency_ms: input.audio_latency_ms,
+    asr_latency_ms: input.asr_latency_ms,
+    llm_latency_ms: input.llm_latency_ms,
+    tts_latency_ms: input.tts_latency_ms,
+    input_tokens: input.input_tokens,
+    output_tokens: input.output_tokens,
+    cost_usd: input.cost_usd,
+    state: input.state,
+    metadata: input.metadata,
+  };
+}
+
+function agentToolCallInsert(input: PostAgentToolCallInput): AgentToolCallInsert {
+  return {
+    id: input.id || uuid(),
+    trace_id: input.trace_id,
+    span_id: input.span_id,
+    connection_id: input.connection_id,
+    session_id: input.session_id,
+    turn_id: input.turn_id,
+    tool_name: input.tool_name,
+    started_at: input.started_at || now(),
+    ended_at: input.ended_at,
+    duration_ms: input.duration_ms,
+    status: input.status ?? "ok",
+    retry_count: input.retry_count ?? 0,
+    input: input.input,
+    output: input.output,
+    error: input.error,
+    metadata: input.metadata,
+  };
+}
+
 function normalizeBatch(input: BatchInput): TelemetryBatchWrite {
   const connectionUpdates: ConnectionUpdate[] = [];
   for (const update of input.connection_updates ?? []) {
@@ -221,6 +276,8 @@ function normalizeBatch(input: BatchInput): TelemetryBatchWrite {
     events: (input.events ?? []).map(eventInsert),
     metrics: (input.metrics ?? []).map(metricInsert),
     logs: (input.logs ?? []).map(logInsert),
+    voiceTurns: (input.voice_turns ?? []).map(voiceTurnInsert),
+    toolCalls: (input.tool_calls ?? []).map(agentToolCallInsert),
   };
 }
 
@@ -233,6 +290,8 @@ function batchCounts(input: TelemetryBatchWrite) {
   if (input.events.length > 0) counts.events = input.events.length;
   if (input.metrics.length > 0) counts.metrics = input.metrics.length;
   if (input.logs.length > 0) counts.logs = input.logs.length;
+  if (input.voiceTurns.length > 0) counts.voice_turns = input.voiceTurns.length;
+  if (input.toolCalls.length > 0) counts.tool_calls = input.toolCalls.length;
   return counts;
 }
 
@@ -244,7 +303,9 @@ function operationCount(input: TelemetryBatchWrite) {
     input.spanUpdates.length +
     input.events.length +
     input.metrics.length +
-    input.logs.length
+    input.logs.length +
+    input.voiceTurns.length +
+    input.toolCalls.length
   );
 }
 
@@ -355,6 +416,44 @@ export function postLogs(
     );
     const records = items.map(logInsert);
     yield* deps.repository.insertLogs(records);
+    return { count: records.length };
+  });
+}
+
+export function postVoiceTurns(
+  deps: IngestDeps,
+  raw: unknown
+): Effect.Effect<{ count: number }, IngestError> {
+  return Effect.gen(function* () {
+    yield* authorize(deps);
+    const items = yield* decodeArray(
+      PostVoiceTurnInputSchema,
+      raw,
+      "No voice turns provided",
+      500,
+      "Max 500 voice turns per request"
+    );
+    const records = items.map(voiceTurnInsert);
+    yield* deps.repository.insertVoiceTurns(records);
+    return { count: records.length };
+  });
+}
+
+export function postAgentToolCalls(
+  deps: IngestDeps,
+  raw: unknown
+): Effect.Effect<{ count: number }, IngestError> {
+  return Effect.gen(function* () {
+    yield* authorize(deps);
+    const items = yield* decodeArray(
+      PostAgentToolCallInputSchema,
+      raw,
+      "No tool calls provided",
+      500,
+      "Max 500 tool calls per request"
+    );
+    const records = items.map(agentToolCallInsert);
+    yield* deps.repository.insertAgentToolCalls(records);
     return { count: records.length };
   });
 }

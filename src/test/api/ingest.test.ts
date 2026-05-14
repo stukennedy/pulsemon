@@ -127,6 +127,82 @@ describe("POST /api/ingest", () => {
     });
   });
 
+  it("inserts voice turns through the Effect ingest pipeline", async () => {
+    const res = await ctx.request("/api/ingest/voice/turns", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "turn-effect-1",
+        connection_id: "conn-effect-1",
+        session_id: "session-1",
+        trace_id: "trace-1",
+        turn_index: 1,
+        role: "user",
+        transcript: "what is my account balance",
+        transcript_confidence: 0.96,
+        vad_start_ms: 120,
+        vad_end_ms: 1540,
+        interruption: false,
+        audio_latency_ms: 80,
+        asr_latency_ms: 240,
+        metadata: { locale: "en-GB" },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as unknown;
+    expect(body).toEqual({ count: 1 });
+
+    const row = ctx.sqlite
+      .prepare("SELECT role, transcript, transcript_confidence, interruption, asr_latency_ms, metadata FROM voice_turns WHERE id = ?")
+      .get("turn-effect-1") as any;
+
+    expect(row).toEqual({
+      role: "user",
+      transcript: "what is my account balance",
+      transcript_confidence: 0.96,
+      interruption: 0,
+      asr_latency_ms: 240,
+      metadata: JSON.stringify({ locale: "en-GB" }),
+    });
+  });
+
+  it("inserts agent tool calls through the Effect ingest pipeline", async () => {
+    const res = await ctx.request("/api/ingest/agent/tool-calls", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "tool-effect-1",
+        trace_id: "trace-1",
+        span_id: "span-1",
+        connection_id: "conn-effect-1",
+        session_id: "session-1",
+        turn_id: "turn-effect-1",
+        tool_name: "billing.lookup_balance",
+        status: "error",
+        retry_count: 2,
+        input: { account_id: "acct-1" },
+        error: "provider timeout",
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as unknown;
+    expect(body).toEqual({ count: 1 });
+
+    const row = ctx.sqlite
+      .prepare("SELECT tool_name, status, retry_count, input, error FROM agent_tool_calls WHERE id = ?")
+      .get("tool-effect-1") as any;
+
+    expect(row).toEqual({
+      tool_name: "billing.lookup_balance",
+      status: "error",
+      retry_count: 2,
+      input: JSON.stringify({ account_id: "acct-1" }),
+      error: "provider timeout",
+    });
+  });
+
   it("rejects invalid batch records instead of silently dropping them", async () => {
     const res = await ctx.request("/api/ingest/batch", {
       method: "POST",
