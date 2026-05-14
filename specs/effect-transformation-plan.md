@@ -127,3 +127,6 @@ Expected outcomes:
 - 2026-05-14: started the first-class observability model by adding logs as a
   separate signal with storage, typed ingest, batch support, query filtering,
   UI/API routes, and documentation.
+- 2026-05-14: added metrics as a queryable signal with recent samples, grouped
+  summaries, typed Effect query access, `/metrics` UI/API routes, websocket
+  filtering, and documentation.

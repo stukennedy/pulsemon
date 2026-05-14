@@ -4,9 +4,12 @@ import {
   getConnectionDetail,
   getConnectionFacetValues,
   getLogFacetValues,
+  getMetricFacetValues,
   getTraceSpans,
   queryConnections,
   queryLogs,
+  queryMetrics,
+  queryMetricSummaries,
   querySpans,
 } from "@/lib/facets";
 
@@ -98,6 +101,33 @@ describe("facets", () => {
     });
   });
 
+  describe("queryMetrics", () => {
+    it("filters by metric name", async () => {
+      ctx.seedMetric({ metric_name: "voice.latency_ms", value: 120 });
+      ctx.seedMetric({ metric_name: "tokens.total", metric_type: "counter", value: 10 });
+
+      const { metrics, total } = await queryMetrics(ctx.d1, [{ facet: "name", value: "tokens.total" }]);
+      expect(total).toBe(1);
+      expect(metrics[0].metric_name).toBe("tokens.total");
+    });
+
+    it("summarizes grouped metrics", async () => {
+      ctx.seedMetric({ service: "voice-gateway", metric_name: "voice.latency_ms", value: 100 });
+      ctx.seedMetric({ service: "voice-gateway", metric_name: "voice.latency_ms", value: 200 });
+
+      const summaries = await queryMetricSummaries(ctx.d1, []);
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0]).toMatchObject({
+        service: "voice-gateway",
+        metric_name: "voice.latency_ms",
+        count: 2,
+        avg: 150,
+        min: 100,
+        max: 200,
+      });
+    });
+  });
+
   describe("getTraceSpans", () => {
     it("returns spans for a trace", async () => {
       ctx.seedSpan({ trace_id: "t1", operation: "a" });
@@ -138,6 +168,17 @@ describe("facets", () => {
 
       const values = await getLogFacetValues(ctx.d1, "level", "", []);
       expect(values.sort()).toEqual(["error", "info"]);
+    });
+  });
+
+  describe("getMetricFacetValues", () => {
+    it("returns unique metric names", async () => {
+      ctx.seedMetric({ metric_name: "voice.latency_ms" });
+      ctx.seedMetric({ metric_name: "tokens.total" });
+      ctx.seedMetric({ metric_name: "tokens.total" });
+
+      const values = await getMetricFacetValues(ctx.d1, "name", "", []);
+      expect(values.sort()).toEqual(["tokens.total", "voice.latency_ms"]);
     });
   });
 });

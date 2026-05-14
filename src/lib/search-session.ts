@@ -2,16 +2,18 @@ import { DurableObject } from "cloudflare:workers";
 import { Effect } from "effect";
 import type { ActiveTag, Env } from "../types";
 import {
-  CONNECTION_FACET_NAMES, LOG_FACET_NAMES, SPAN_FACET_NAMES,
+  CONNECTION_FACET_NAMES, LOG_FACET_NAMES, METRIC_FACET_NAMES, SPAN_FACET_NAMES,
 } from "./facets";
 import {
   getConnectionFacetValues as getConnectionFacetValuesEffect,
   getLogFacetValues as getLogFacetValuesEffect,
+  getMetricFacetValues as getMetricFacetValuesEffect,
   getSpanFacetValues as getSpanFacetValuesEffect,
   makeD1TelemetryQueryRepository,
   queryConnectionStats as queryConnectionStatsEffect,
   queryConnections as queryConnectionsEffect,
   queryLogs as queryLogsEffect,
+  queryMetricOverview as queryMetricOverviewEffect,
   querySpans as querySpansEffect,
   type QueryDeps,
 } from "./effect/query";
@@ -19,6 +21,7 @@ import type { QueryError } from "./effect/errors";
 import { jsxToString } from "./render";
 import { ConnectionTable } from "@/components/ConnectionTable";
 import { LogTable } from "@/components/LogTable";
+import { MetricTable } from "@/components/MetricTable";
 import { TraceList } from "@/components/TraceWaterfall";
 import { TagBar } from "@/components/TagBar";
 import { ConnectionStatsBar } from "@/components/StatsBar";
@@ -52,6 +55,9 @@ export class SearchSession extends DurableObject<Env> {
     } else if (this.view === "logs") {
       const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), this.tags));
       this.sendUi(server, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
+    } else if (this.view === "metrics") {
+      const { metrics, summaries, total } = await this.runQuery(queryMetricOverviewEffect(this.queryDeps(), this.tags));
+      this.sendUi(server, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })));
     }
 
     return new Response(null, { status: 101, webSocket: client });
@@ -98,6 +104,7 @@ export class SearchSession extends DurableObject<Env> {
   private getFacetNames(): string[] {
     if (this.view === "traces") return SPAN_FACET_NAMES;
     if (this.view === "logs") return LOG_FACET_NAMES;
+    if (this.view === "metrics") return METRIC_FACET_NAMES;
     return CONNECTION_FACET_NAMES;
   }
 
@@ -115,6 +122,9 @@ export class SearchSession extends DurableObject<Env> {
     }
     if (this.view === "logs") {
       return this.runQuery(getLogFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
+    }
+    if (this.view === "metrics") {
+      return this.runQuery(getMetricFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
     }
     return this.runQuery(getConnectionFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
   }
@@ -163,6 +173,9 @@ export class SearchSession extends DurableObject<Env> {
     } else if (this.view === "logs") {
       const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), tags));
       this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
+    } else if (this.view === "metrics") {
+      const { metrics, summaries, total } = await this.runQuery(queryMetricOverviewEffect(this.queryDeps(), tags));
+      this.sendUi(ws, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })));
     }
   }
 
@@ -183,6 +196,9 @@ export class SearchSession extends DurableObject<Env> {
     } else if (this.view === "logs") {
       const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), tags));
       this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
+    } else if (this.view === "metrics") {
+      const { metrics, summaries, total } = await this.runQuery(queryMetricOverviewEffect(this.queryDeps(), tags));
+      this.sendUi(ws, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })));
     }
 
     this.sendUi(ws, "#tag-bar", "outerHTML", await jsxToString(TagBar({ tags })));

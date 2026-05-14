@@ -40,6 +40,14 @@ describe("Page routes", () => {
     expect(html).toContain("ws-container");
   });
 
+  it("GET /metrics returns metrics page", async () => {
+    const res = await ctx.request("/metrics");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("Metrics");
+    expect(html).toContain("ws-container");
+  });
+
   it("GET /voice returns voice pipeline page", async () => {
     const res = await ctx.request("/voice");
     expect(res.status).toBe(200);

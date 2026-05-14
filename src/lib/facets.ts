@@ -1,8 +1,8 @@
 import { drizzle } from "drizzle-orm/d1";
 import { asc, desc, count, sql, and, or, eq } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm/column";
-import { connections, spans, events, logs } from "@/db/schema";
-import type { Connection, Span, Event, LogRecord } from "@/db/schema";
+import { connections, spans, events, logs, metrics } from "@/db/schema";
+import type { Connection, Span, Event, LogRecord, Metric } from "@/db/schema";
 import type { ActiveTag } from "@/types";
 
 type FacetDefinition = {
@@ -36,9 +36,16 @@ export const LOG_FACETS = [
   { name: "connection", field: "connection_id", col: logs.connection_id },
 ];
 
+export const METRIC_FACETS = [
+  { name: "service", field: "service", col: metrics.service },
+  { name: "name", field: "metric_name", col: metrics.metric_name },
+  { name: "type", field: "metric_type", col: metrics.metric_type },
+];
+
 export const CONNECTION_FACET_NAMES = CONNECTION_FACETS.map((f) => f.name);
 export const SPAN_FACET_NAMES = SPAN_FACETS.map((f) => f.name);
 export const LOG_FACET_NAMES = LOG_FACETS.map((f) => f.name);
+export const METRIC_FACET_NAMES = METRIC_FACETS.map((f) => f.name);
 
 function buildConditions(activeTags: ActiveTag[], facets: readonly FacetDefinition[]) {
   const byFacet = new Map<string, ActiveTag[]>();
@@ -81,6 +88,10 @@ export function buildSpanConditions(tags: ActiveTag[]) {
 
 export function buildLogConditions(tags: ActiveTag[]) {
   return buildConditions(tags, LOG_FACETS);
+}
+
+export function buildMetricConditions(tags: ActiveTag[]) {
+  return buildConditions(tags, METRIC_FACETS);
 }
 
 export async function getConnectionFacetValues(
@@ -200,6 +211,75 @@ export async function queryLogs(
   return { logs: rows, total };
 }
 
+export async function queryMetrics(
+  d1: D1Database,
+  activeTags: ActiveTag[],
+  limit = 100,
+  offset = 0
+): Promise<{ metrics: Metric[]; total: number }> {
+  const db = drizzle(d1);
+  const conditions = buildMetricConditions(activeTags);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const [{ total }] = await db.select({ total: count() }).from(metrics).where(where);
+
+  const rows = await db
+    .select()
+    .from(metrics)
+    .where(where)
+    .orderBy(desc(metrics.timestamp))
+    .limit(limit)
+    .offset(offset);
+
+  return { metrics: rows, total };
+}
+
+export interface MetricSummary {
+  service: string;
+  metric_name: string;
+  metric_type: string;
+  count: number;
+  avg: number;
+  min: number;
+  max: number;
+  latest: number;
+  latest_timestamp: string;
+}
+
+export async function queryMetricSummaries(
+  d1: D1Database,
+  activeTags: ActiveTag[]
+): Promise<MetricSummary[]> {
+  const db = drizzle(d1);
+  const conditions = buildMetricConditions(activeTags);
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  return db
+    .select({
+      service: metrics.service,
+      metric_name: metrics.metric_name,
+      metric_type: metrics.metric_type,
+      count: count(),
+      avg: sql<number>`COALESCE(AVG(${metrics.value}), 0)`,
+      min: sql<number>`COALESCE(MIN(${metrics.value}), 0)`,
+      max: sql<number>`COALESCE(MAX(${metrics.value}), 0)`,
+      latest: sql<number>`COALESCE((
+        SELECT m2.value FROM metrics m2
+        WHERE m2.service = ${metrics.service}
+          AND m2.metric_name = ${metrics.metric_name}
+          AND m2.metric_type = ${metrics.metric_type}
+        ORDER BY m2.timestamp DESC
+        LIMIT 1
+      ), 0)`,
+      latest_timestamp: sql<string>`COALESCE(MAX(${metrics.timestamp}), '')`,
+    })
+    .from(metrics)
+    .where(where)
+    .groupBy(metrics.service, metrics.metric_name, metrics.metric_type)
+    .orderBy(desc(sql`MAX(${metrics.timestamp})`))
+    .limit(50);
+}
+
 export async function getTraceSpans(d1: D1Database, traceId: string): Promise<Span[]> {
   const db = drizzle(d1);
   return db.select().from(spans).where(eq(spans.trace_id, traceId)).orderBy(asc(spans.started_at));
@@ -226,6 +306,34 @@ export async function getLogFacetValues(
   const result = await db
     .selectDistinct({ val: sql<string>`CAST(${f.col} AS TEXT)` })
     .from(logs)
+    .where(where)
+    .orderBy(asc(sql`CAST(${f.col} AS TEXT)`))
+    .limit(50);
+
+  return result.map((r) => r.val).filter(Boolean);
+}
+
+export async function getMetricFacetValues(
+  d1: D1Database,
+  facet: string,
+  prefix: string,
+  activeTags: ActiveTag[]
+): Promise<string[]> {
+  const f = METRIC_FACETS.find((x) => x.name === facet);
+  if (!f) return [];
+
+  const db = drizzle(d1);
+  const conditions = buildMetricConditions(activeTags);
+
+  if (prefix) {
+    conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
+  }
+
+  const where = conditions.length > 0 ? and(...conditions) : undefined;
+
+  const result = await db
+    .selectDistinct({ val: sql<string>`CAST(${f.col} AS TEXT)` })
+    .from(metrics)
     .where(where)
     .orderBy(asc(sql`CAST(${f.col} AS TEXT)`))
     .limit(50);

@@ -70,6 +70,10 @@ export interface TestContext {
     id: string; timestamp: string; level: string; service: string; message: string;
     trace_id: string; span_id: string; connection_id: string; attributes: string;
   }>) => void;
+  seedMetric: (overrides?: Partial<{
+    id: string; service: string; metric_name: string; metric_type: string;
+    timestamp: string; value: number; tags: string;
+  }>) => void;
 }
 
 export function createTestContext(): TestContext {
@@ -174,7 +178,23 @@ export function createTestContext(): TestContext {
     );
   };
 
+  const seedMetric = (overrides?: any) => {
+    seq++;
+    sqlite.prepare(`
+      INSERT INTO metrics (id, service, metric_name, metric_type, timestamp, value, tags)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      overrides?.id ?? `metric-${seq}`,
+      overrides?.service ?? "voice-gateway",
+      overrides?.metric_name ?? "voice.latency_ms",
+      overrides?.metric_type ?? "histogram",
+      overrides?.timestamp ?? new Date(Date.now() - seq * 1000).toISOString(),
+      overrides?.value ?? 100 + seq,
+      overrides?.tags ?? null,
+    );
+  };
+
   const request = async (path: string, init?: RequestInit) => app.request(path, init);
 
-  return { app, sqlite, d1, request, seedConnection, seedSpan, seedEvent, seedLog };
+  return { app, sqlite, d1, request, seedConnection, seedSpan, seedEvent, seedLog, seedMetric };
 }

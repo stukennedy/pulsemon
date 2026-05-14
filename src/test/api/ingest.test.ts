@@ -96,6 +96,37 @@ describe("POST /api/ingest", () => {
     });
   });
 
+  it("inserts metrics through the Effect ingest pipeline", async () => {
+    const res = await ctx.request("/api/ingest/metrics", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "metric-effect-1",
+        service: "voice-gateway",
+        metric_name: "voice.latency_ms",
+        metric_type: "histogram",
+        value: 123.4,
+        tags: { provider: "asr" },
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as unknown;
+    expect(body).toEqual({ count: 1 });
+
+    const row = ctx.sqlite
+      .prepare("SELECT service, metric_name, metric_type, value, tags FROM metrics WHERE id = ?")
+      .get("metric-effect-1") as any;
+
+    expect(row).toEqual({
+      service: "voice-gateway",
+      metric_name: "voice.latency_ms",
+      metric_type: "histogram",
+      value: 123.4,
+      tags: JSON.stringify({ provider: "asr" }),
+    });
+  });
+
   it("rejects invalid batch records instead of silently dropping them", async () => {
     const res = await ctx.request("/api/ingest/batch", {
       method: "POST",

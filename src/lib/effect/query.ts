@@ -1,15 +1,19 @@
 import { Effect } from "effect";
-import type { Connection, Event, LogRecord, Span } from "@/db/schema";
+import type { Connection, Event, LogRecord, Metric, Span } from "@/db/schema";
 import type { ActiveTag } from "@/types";
 import {
   getConnectionDetail as getConnectionDetailFromD1,
   getConnectionFacetValues as getConnectionFacetValuesFromD1,
   getLogFacetValues as getLogFacetValuesFromD1,
+  getMetricFacetValues as getMetricFacetValuesFromD1,
   getSpanFacetValues as getSpanFacetValuesFromD1,
   getTraceSpans as getTraceSpansFromD1,
   queryConnections as queryConnectionsFromD1,
   queryLogs as queryLogsFromD1,
+  queryMetrics as queryMetricsFromD1,
+  queryMetricSummaries as queryMetricSummariesFromD1,
   querySpans as querySpansFromD1,
+  type MetricSummary,
 } from "@/lib/facets";
 import {
   queryConnectionStats as queryConnectionStatsFromD1,
@@ -48,6 +52,15 @@ export interface LogQueryResult {
   readonly total: number;
 }
 
+export interface MetricQueryResult {
+  readonly metrics: Metric[];
+  readonly total: number;
+}
+
+export interface MetricOverviewResult extends MetricQueryResult {
+  readonly summaries: MetricSummary[];
+}
+
 export interface ConnectionDetailResult {
   readonly connection: Connection | null;
   readonly events: Event[];
@@ -68,6 +81,11 @@ export interface TelemetryQueryRepository {
     activeTags: readonly ActiveTag[],
     pagination: NormalizedPagination
   ) => Effect.Effect<LogQueryResult, DatabaseError>;
+  readonly queryMetrics: (
+    activeTags: readonly ActiveTag[],
+    pagination: NormalizedPagination
+  ) => Effect.Effect<MetricQueryResult, DatabaseError>;
+  readonly queryMetricSummaries: (activeTags: readonly ActiveTag[]) => Effect.Effect<MetricSummary[], DatabaseError>;
   readonly getTraceSpans: (traceId: string) => Effect.Effect<Span[], DatabaseError>;
   readonly getConnectionFacetValues: (
     facet: string,
@@ -80,6 +98,11 @@ export interface TelemetryQueryRepository {
     activeTags: readonly ActiveTag[]
   ) => Effect.Effect<string[], DatabaseError>;
   readonly getLogFacetValues: (
+    facet: string,
+    prefix: string,
+    activeTags: readonly ActiveTag[]
+  ) => Effect.Effect<string[], DatabaseError>;
+  readonly getMetricFacetValues: (
     facet: string,
     prefix: string,
     activeTags: readonly ActiveTag[]
@@ -139,6 +162,14 @@ export function makeD1TelemetryQueryRepository(d1: D1Database): TelemetryQueryRe
       queryLogsFromD1(d1, [...activeTags], pagination.limit, pagination.offset)
     ),
 
+    queryMetrics: (activeTags, pagination) => dbEffect(() =>
+      queryMetricsFromD1(d1, [...activeTags], pagination.limit, pagination.offset)
+    ),
+
+    queryMetricSummaries: (activeTags) => dbEffect(() =>
+      queryMetricSummariesFromD1(d1, [...activeTags])
+    ),
+
     getTraceSpans: (traceId) => dbEffect(() =>
       getTraceSpansFromD1(d1, traceId)
     ),
@@ -153,6 +184,10 @@ export function makeD1TelemetryQueryRepository(d1: D1Database): TelemetryQueryRe
 
     getLogFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
       getLogFacetValuesFromD1(d1, facet, prefix, [...activeTags])
+    ),
+
+    getMetricFacetValues: (facet, prefix, activeTags) => dbEffect(() =>
+      getMetricFacetValuesFromD1(d1, facet, prefix, [...activeTags])
     ),
 
     queryDashboardStats: () => dbEffect(() =>
@@ -217,6 +252,40 @@ export function queryLogs(
   });
 }
 
+export function queryMetrics(
+  deps: QueryDeps,
+  activeTags: readonly ActiveTag[],
+  pagination: Pagination = {}
+): Effect.Effect<MetricQueryResult, QueryError> {
+  return Effect.gen(function* () {
+    const normalized = yield* normalizePagination(
+      pagination,
+      { limit: 100, offset: 0 },
+      1000
+    );
+    return yield* deps.repository.queryMetrics(activeTags, normalized);
+  });
+}
+
+export function queryMetricOverview(
+  deps: QueryDeps,
+  activeTags: readonly ActiveTag[],
+  pagination: Pagination = {}
+): Effect.Effect<MetricOverviewResult, QueryError> {
+  return Effect.gen(function* () {
+    const normalized = yield* normalizePagination(
+      pagination,
+      { limit: 100, offset: 0 },
+      1000
+    );
+    const [metricResult, summaries] = yield* Effect.all([
+      deps.repository.queryMetrics(activeTags, normalized),
+      deps.repository.queryMetricSummaries(activeTags),
+    ], { concurrency: "unbounded" });
+    return { ...metricResult, summaries };
+  });
+}
+
 export function getTraceSpans(
   deps: QueryDeps,
   traceId: string
@@ -249,6 +318,15 @@ export function getLogFacetValues(
   activeTags: readonly ActiveTag[]
 ): Effect.Effect<string[], QueryError> {
   return deps.repository.getLogFacetValues(facet, prefix, activeTags);
+}
+
+export function getMetricFacetValues(
+  deps: QueryDeps,
+  facet: string,
+  prefix: string,
+  activeTags: readonly ActiveTag[]
+): Effect.Effect<string[], QueryError> {
+  return deps.repository.getMetricFacetValues(facet, prefix, activeTags);
 }
 
 export function queryDashboardStats(

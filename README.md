@@ -196,6 +196,25 @@ curl -s "$PULSEMON_URL/api/ingest/logs" \
 Open `/logs` to filter logs by `service`, `level`, `trace`, `span`, or
 `connection`.
 
+### Minimal metric example
+
+Metrics can be queried as recent samples and grouped summaries:
+
+```bash
+curl -s "$PULSEMON_URL/api/ingest/metrics" \
+  -H "Authorization: Bearer $PULSEMON_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "service": "voice-gateway",
+    "metric_name": "voice.latency_ms",
+    "metric_type": "histogram",
+    "value": 123.4,
+    "tags": { "provider": "asr" }
+  }'
+```
+
+Open `/metrics` to filter metrics by `service`, `name`, or `type`.
+
 ### Instrumenting an app
 
 A small wrapper is enough for most services:
