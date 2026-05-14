@@ -116,6 +116,43 @@ describe("POST /api/ingest", () => {
     expect(row).toEqual({ workspace_id: "acme", project_id: "voice-prod" });
   });
 
+  it("rate limits ingest requests per token and scope", async () => {
+    ctx = createTestContext({ env: { INGEST_RATE_LIMIT_PER_MINUTE: "1" } });
+
+    const first = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ service: "voice-gateway", level: "info", message: "first" }),
+    });
+    expect(first.status).toBe(201);
+
+    const second = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ service: "voice-gateway", level: "info", message: "second" }),
+    });
+    expect(second.status).toBe(429);
+  });
+
+  it("samples high-volume logs when configured", async () => {
+    ctx = createTestContext({ env: { INGEST_SAMPLE_RATE: "0" } });
+
+    const res = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ id: "sampled-log", service: "voice-gateway", level: "info", message: "sample me" }),
+    });
+
+    expect(res.status).toBe(201);
+    const body = await res.json() as unknown;
+    expect(body).toEqual({ count: 0, sampled_out: 1 });
+
+    const row = ctx.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM logs WHERE id = ?")
+      .get("sampled-log") as any;
+    expect(row.count).toBe(0);
+  });
+
   it("validates required connection fields", async () => {
     const res = await ctx.request("/api/ingest/connections", {
       method: "POST",

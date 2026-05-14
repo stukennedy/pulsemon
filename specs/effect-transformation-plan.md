@@ -146,3 +146,7 @@ Expected outcomes:
 - 2026-05-14: added retention and rollup controls: scheduled maintenance,
   manual `/api/admin/maintenance`, raw telemetry expiry, 1-minute metric
   rollups, and validated retention configuration.
+- 2026-05-14: added ingest pressure controls: D1-backed per-minute request
+  limits by token/workspace/project/scope, deterministic sampling for
+  high-volume events/metrics/logs, 429 error mapping, and maintenance cleanup
+  for rate-limit counters.

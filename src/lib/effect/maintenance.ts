@@ -19,6 +19,7 @@ export interface MaintenanceResult {
     readonly voice_turns: number;
     readonly agent_tool_calls: number;
     readonly metric_rollups_1m: number;
+    readonly ingest_rate_limits: number;
   };
 }
 
@@ -155,6 +156,7 @@ export function runMaintenance(
       voiceTurns,
       agentToolCalls,
       metricRollups,
+      ingestRateLimits,
     ] = yield* Effect.all([
       deleteOlderThan(db, "connections", "started_at", config.retentionDays),
       deleteOlderThan(db, "spans", "started_at", config.retentionDays),
@@ -164,6 +166,7 @@ export function runMaintenance(
       deleteOlderThan(db, "voice_turns", "started_at", config.retentionDays),
       deleteOlderThan(db, "agent_tool_calls", "started_at", config.retentionDays),
       deleteOlderThan(db, "metric_rollups_1m", "bucket_start", config.metricRollupRetentionDays),
+      deleteOlderThan(db, "ingest_rate_limits", "window_start", 1),
     ], { concurrency: 1 });
 
     return {
@@ -177,6 +180,7 @@ export function runMaintenance(
         voice_turns: voiceTurns,
         agent_tool_calls: agentToolCalls,
         metric_rollups_1m: metricRollups,
+        ingest_rate_limits: ingestRateLimits,
       },
     };
   });

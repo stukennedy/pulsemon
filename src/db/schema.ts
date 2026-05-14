@@ -138,6 +138,15 @@ export const metric_rollups_1m = sqliteTable("metric_rollups_1m", {
   sum: real("sum").notNull(),
 });
 
+export const ingest_rate_limits = sqliteTable("ingest_rate_limits", {
+  window_start: text("window_start").notNull(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  scope: text("scope").notNull(),
+  token_hash: text("token_hash").notNull(),
+  request_count: integer("request_count").notNull().default(0),
+});
+
 export type Connection = typeof connections.$inferSelect;
 export type Span = typeof spans.$inferSelect;
 export type Event = typeof events.$inferSelect;
@@ -146,3 +155,4 @@ export type Metric = typeof metrics.$inferSelect;
 export type VoiceTurn = typeof voice_turns.$inferSelect;
 export type AgentToolCall = typeof agent_tool_calls.$inferSelect;
 export type MetricRollup1m = typeof metric_rollups_1m.$inferSelect;
+export type IngestRateLimit = typeof ingest_rate_limits.$inferSelect;

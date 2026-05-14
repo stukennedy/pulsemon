@@ -1,11 +1,17 @@
 import { Effect } from "effect";
 import type { TenantScope } from "@/types";
-import { authorizeIngest } from "./auth";
+import { authorizeIngest, type ApiKeyContext } from "./auth";
 import {
   PayloadTooLargeError,
   ValidationError,
   type IngestError,
 } from "./errors";
+import {
+  DEFAULT_INGEST_PRESSURE_CONFIG,
+  sampleItems,
+  type IngestPressureConfig,
+  type IngestPressureController,
+} from "./pressure";
 import type {
   LogInsert,
   MetricInsert,
@@ -21,6 +27,7 @@ export interface OtlpDeps {
   readonly authorization: string;
   readonly requiredScope: string;
   readonly defaultTenant: TenantScope;
+  readonly pressure?: IngestPressureController;
 }
 
 type OtlpRecord = Record<string, unknown>;
@@ -37,6 +44,27 @@ function asRecord(value: unknown): OtlpRecord | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as OtlpRecord
     : null;
+}
+
+function preparePressure(
+  deps: OtlpDeps,
+  context: ApiKeyContext
+): Effect.Effect<IngestPressureConfig, IngestError> {
+  return deps.pressure
+    ? deps.pressure.prepare(context, deps.requiredScope)
+    : Effect.succeed(DEFAULT_INGEST_PRESSURE_CONFIG);
+}
+
+function metricCountResult(count: number, sampledOut: number) {
+  return sampledOut > 0
+    ? { counts: { metrics: count }, sampled_out: sampledOut }
+    : { counts: { metrics: count } };
+}
+
+function logCountResult(count: number, sampledOut: number) {
+  return sampledOut > 0
+    ? { counts: { logs: count }, sampled_out: sampledOut }
+    : { counts: { logs: count } };
 }
 
 function asArray(value: unknown): unknown[] {
@@ -314,6 +342,7 @@ export function postOtlpTraces(
 ): Effect.Effect<{ counts: { spans: number } }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    yield* preparePressure(deps, auth);
     const spans = traceSpans(raw, auth);
     yield* ensureBatchSize(spans.length);
     yield* deps.repository.writeBatch({ ...emptyBatch(), spans });
@@ -324,25 +353,33 @@ export function postOtlpTraces(
 export function postOtlpMetrics(
   deps: OtlpDeps,
   raw: unknown
-): Effect.Effect<{ counts: { metrics: number } }, IngestError> {
+): Effect.Effect<{ counts: { metrics: number }; sampled_out?: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    const pressure = yield* preparePressure(deps, auth);
     const metrics = metricRecords(raw, auth);
     yield* ensureBatchSize(metrics.length);
-    yield* deps.repository.writeBatch({ ...emptyBatch(), metrics });
-    return { counts: { metrics: metrics.length } };
+    const sampled = sampleItems(metrics, pressure, (metric) => metric.id);
+    if (sampled.kept.length > 0) {
+      yield* deps.repository.writeBatch({ ...emptyBatch(), metrics: sampled.kept });
+    }
+    return metricCountResult(sampled.kept.length, sampled.sampledOut);
   });
 }
 
 export function postOtlpLogs(
   deps: OtlpDeps,
   raw: unknown
-): Effect.Effect<{ counts: { logs: number } }, IngestError> {
+): Effect.Effect<{ counts: { logs: number }; sampled_out?: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    const pressure = yield* preparePressure(deps, auth);
     const logs = logRecords(raw, auth);
     yield* ensureBatchSize(logs.length);
-    yield* deps.repository.writeBatch({ ...emptyBatch(), logs });
-    return { counts: { logs: logs.length } };
+    const sampled = sampleItems(logs, pressure, (log) => log.id);
+    if (sampled.kept.length > 0) {
+      yield* deps.repository.writeBatch({ ...emptyBatch(), logs: sampled.kept });
+    }
+    return logCountResult(sampled.kept.length, sampled.sampledOut);
   });
 }

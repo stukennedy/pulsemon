@@ -16,6 +16,10 @@ export class PayloadTooLargeError extends Data.TaggedError("PayloadTooLargeError
   readonly message: string;
 }> {}
 
+export class RateLimitError extends Data.TaggedError("RateLimitError")<{
+  readonly message: string;
+}> {}
+
 export class NotFoundError extends Data.TaggedError("NotFoundError")<{
   readonly message: string;
 }> {}
@@ -29,6 +33,7 @@ export type IngestError =
   | UnauthorizedError
   | ValidationError
   | PayloadTooLargeError
+  | RateLimitError
   | DatabaseError;
 
 export type QueryError =
@@ -44,6 +49,8 @@ export function errorStatus(error: AppError): number {
       return 503;
     case "UnauthorizedError":
       return 401;
+    case "RateLimitError":
+      return 429;
     case "NotFoundError":
       return 404;
     case "ValidationError":

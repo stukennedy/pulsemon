@@ -34,6 +34,8 @@ export interface Env {
   RETENTION_DAYS?: string;
   METRIC_ROLLUP_AFTER_MINUTES?: string;
   METRIC_ROLLUP_RETENTION_DAYS?: string;
+  INGEST_RATE_LIMIT_PER_MINUTE?: string;
+  INGEST_SAMPLE_RATE?: string;
   MAINTENANCE_API_KEY?: string;
   UI_BASIC_AUTH?: string;
 }

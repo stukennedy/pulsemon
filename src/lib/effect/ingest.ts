@@ -1,12 +1,18 @@
 import { Effect } from "effect";
 import * as Schema from "effect/Schema";
 import type { TenantScope } from "@/types";
-import { authorizeIngest } from "./auth";
+import { authorizeIngest, type ApiKeyContext } from "./auth";
 import {
   PayloadTooLargeError,
   ValidationError,
   type IngestError,
 } from "./errors";
+import {
+  DEFAULT_INGEST_PRESSURE_CONFIG,
+  sampleItems,
+  type IngestPressureConfig,
+  type IngestPressureController,
+} from "./pressure";
 import type {
   AgentToolCallInsert,
   ConnectionInsert,
@@ -50,6 +56,7 @@ export interface IngestDeps {
   readonly authorization: string;
   readonly requiredScope: string;
   readonly defaultTenant: TenantScope;
+  readonly pressure?: IngestPressureController;
 }
 
 function uuid() {
@@ -84,6 +91,31 @@ function decodeArray<A, I>(
     return Effect.fail(new PayloadTooLargeError({ message: maxMessage }));
   }
   return decode(Schema.Array(schema), items);
+}
+
+function preparePressure(
+  deps: IngestDeps,
+  context: ApiKeyContext
+): Effect.Effect<IngestPressureConfig, IngestError> {
+  return deps.pressure
+    ? deps.pressure.prepare(context, deps.requiredScope)
+    : Effect.succeed(DEFAULT_INGEST_PRESSURE_CONFIG);
+}
+
+function countResult(count: number, sampledOut: number) {
+  return sampledOut > 0 ? { count, sampled_out: sampledOut } : { count };
+}
+
+function eventSamplingKey(input: PostEventInput, index: number) {
+  return input.id ?? input.trace_id ?? input.connection_id ?? `${input.event_type}:${input.timestamp ?? index}`;
+}
+
+function metricSamplingKey(input: PostMetricInput, index: number) {
+  return input.id ?? `${input.service}:${input.metric_name}:${input.timestamp ?? index}:${input.value}`;
+}
+
+function logSamplingKey(input: PostLogInput, index: number) {
+  return input.id ?? input.trace_id ?? input.span_id ?? `${input.service}:${input.level}:${input.message}:${index}`;
 }
 
 function hasConnectionUpdateFields(input: PatchConnectionInput) {
@@ -246,7 +278,11 @@ function agentToolCallInsert(input: PostAgentToolCallInput, tenant: TenantScope)
   };
 }
 
-function normalizeBatch(input: BatchInput, tenant: TenantScope): TelemetryBatchWrite {
+function normalizeBatch(
+  input: BatchInput,
+  tenant: TenantScope,
+  pressure: IngestPressureConfig
+): { batch: TelemetryBatchWrite; sampledOut: number } {
   const connectionUpdates: ConnectionUpdate[] = [];
   for (const update of input.connection_updates ?? []) {
     if (hasConnectionUpdateFields(update)) {
@@ -261,16 +297,23 @@ function normalizeBatch(input: BatchInput, tenant: TenantScope): TelemetryBatchW
     }
   }
 
+  const sampledEvents = sampleItems(input.events ?? [], pressure, eventSamplingKey);
+  const sampledMetrics = sampleItems(input.metrics ?? [], pressure, metricSamplingKey);
+  const sampledLogs = sampleItems(input.logs ?? [], pressure, logSamplingKey);
+
   return {
-    connections: (input.connections ?? []).map((input) => connectionInsert(input, tenant)),
-    connectionUpdates,
-    spans: (input.spans ?? []).map((input) => spanInsert(input, tenant)),
-    spanUpdates,
-    events: (input.events ?? []).map((input) => eventInsert(input, tenant)),
-    metrics: (input.metrics ?? []).map((input) => metricInsert(input, tenant)),
-    logs: (input.logs ?? []).map((input) => logInsert(input, tenant)),
-    voiceTurns: (input.voice_turns ?? []).map((input) => voiceTurnInsert(input, tenant)),
-    toolCalls: (input.tool_calls ?? []).map((input) => agentToolCallInsert(input, tenant)),
+    batch: {
+      connections: (input.connections ?? []).map((input) => connectionInsert(input, tenant)),
+      connectionUpdates,
+      spans: (input.spans ?? []).map((input) => spanInsert(input, tenant)),
+      spanUpdates,
+      events: sampledEvents.kept.map((input) => eventInsert(input, tenant)),
+      metrics: sampledMetrics.kept.map((input) => metricInsert(input, tenant)),
+      logs: sampledLogs.kept.map((input) => logInsert(input, tenant)),
+      voiceTurns: (input.voice_turns ?? []).map((input) => voiceTurnInsert(input, tenant)),
+      toolCalls: (input.tool_calls ?? []).map((input) => agentToolCallInsert(input, tenant)),
+    },
+    sampledOut: sampledEvents.sampledOut + sampledMetrics.sampledOut + sampledLogs.sampledOut,
   };
 }
 
@@ -308,6 +351,7 @@ export function postConnection(
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    yield* preparePressure(deps, auth);
     const input = yield* decode(PostConnectionInputSchema, raw);
     const record = connectionInsert(input, auth);
     yield* deps.repository.insertConnection(record);
@@ -322,6 +366,7 @@ export function patchConnection(
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    yield* preparePressure(deps, auth);
     const input = yield* decode(PatchConnectionInputSchema, raw);
     yield* ensureConnectionUpdate(input);
     yield* deps.repository.updateConnection(id, { ...auth, ...input });
@@ -335,6 +380,7 @@ export function postSpan(
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    yield* preparePressure(deps, auth);
     const input = yield* decode(PostSpanInputSchema, raw);
     const record = spanInsert(input, auth);
     yield* deps.repository.insertSpan(record);
@@ -349,6 +395,7 @@ export function patchSpan(
 ): Effect.Effect<{ id: string }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    yield* preparePressure(deps, auth);
     const input = yield* decode(PatchSpanInputSchema, raw);
     yield* ensureSpanUpdate(input);
     yield* deps.repository.updateSpan(id, { ...auth, ...input });
@@ -359,9 +406,10 @@ export function patchSpan(
 export function postEvents(
   deps: IngestDeps,
   raw: unknown
-): Effect.Effect<{ count: number }, IngestError> {
+): Effect.Effect<{ count: number; sampled_out?: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    const pressure = yield* preparePressure(deps, auth);
     const items = yield* decodeArray(
       PostEventInputSchema,
       raw,
@@ -369,18 +417,22 @@ export function postEvents(
       500,
       "Max 500 events per request"
     );
-    const records = items.map((input) => eventInsert(input, auth));
-    yield* deps.repository.insertEvents(records);
-    return { count: records.length };
+    const sampled = sampleItems(items, pressure, eventSamplingKey);
+    const records = sampled.kept.map((input) => eventInsert(input, auth));
+    if (records.length > 0) {
+      yield* deps.repository.insertEvents(records);
+    }
+    return countResult(records.length, sampled.sampledOut);
   });
 }
 
 export function postMetrics(
   deps: IngestDeps,
   raw: unknown
-): Effect.Effect<{ count: number }, IngestError> {
+): Effect.Effect<{ count: number; sampled_out?: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    const pressure = yield* preparePressure(deps, auth);
     const items = yield* decodeArray(
       PostMetricInputSchema,
       raw,
@@ -388,18 +440,22 @@ export function postMetrics(
       500,
       "Max 500 metrics per request"
     );
-    const records = items.map((input) => metricInsert(input, auth));
-    yield* deps.repository.insertMetrics(records);
-    return { count: records.length };
+    const sampled = sampleItems(items, pressure, metricSamplingKey);
+    const records = sampled.kept.map((input) => metricInsert(input, auth));
+    if (records.length > 0) {
+      yield* deps.repository.insertMetrics(records);
+    }
+    return countResult(records.length, sampled.sampledOut);
   });
 }
 
 export function postLogs(
   deps: IngestDeps,
   raw: unknown
-): Effect.Effect<{ count: number }, IngestError> {
+): Effect.Effect<{ count: number; sampled_out?: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    const pressure = yield* preparePressure(deps, auth);
     const items = yield* decodeArray(
       PostLogInputSchema,
       raw,
@@ -407,9 +463,12 @@ export function postLogs(
       1000,
       "Max 1000 logs per request"
     );
-    const records = items.map((input) => logInsert(input, auth));
-    yield* deps.repository.insertLogs(records);
-    return { count: records.length };
+    const sampled = sampleItems(items, pressure, logSamplingKey);
+    const records = sampled.kept.map((input) => logInsert(input, auth));
+    if (records.length > 0) {
+      yield* deps.repository.insertLogs(records);
+    }
+    return countResult(records.length, sampled.sampledOut);
   });
 }
 
@@ -419,6 +478,7 @@ export function postVoiceTurns(
 ): Effect.Effect<{ count: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    yield* preparePressure(deps, auth);
     const items = yield* decodeArray(
       PostVoiceTurnInputSchema,
       raw,
@@ -438,6 +498,7 @@ export function postAgentToolCalls(
 ): Effect.Effect<{ count: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    yield* preparePressure(deps, auth);
     const items = yield* decodeArray(
       PostAgentToolCallInputSchema,
       raw,
@@ -454,14 +515,18 @@ export function postAgentToolCalls(
 export function postBatch(
   deps: IngestDeps,
   raw: unknown
-): Effect.Effect<{ counts: Record<string, number> }, IngestError> {
+): Effect.Effect<{ counts: Record<string, number>; sampled_out?: number }, IngestError> {
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
+    const pressure = yield* preparePressure(deps, auth);
     const input = yield* decode(BatchInputSchema, raw);
-    const batch = normalizeBatch(input, auth);
+    const { batch, sampledOut } = normalizeBatch(input, auth, pressure);
     const total = operationCount(batch);
 
     if (total === 0) {
+      if (sampledOut > 0) {
+        return { counts: {}, sampled_out: sampledOut };
+      }
       return yield* Effect.fail(new ValidationError({ message: "No valid records in batch" }));
     }
     if (total > 1000) {
@@ -469,6 +534,7 @@ export function postBatch(
     }
 
     yield* deps.repository.writeBatch(batch);
-    return { counts: batchCounts(batch) };
+    const counts = batchCounts(batch);
+    return sampledOut > 0 ? { counts, sampled_out: sampledOut } : { counts };
   });
 }

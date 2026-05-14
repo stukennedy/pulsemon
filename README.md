@@ -123,6 +123,12 @@ METRIC_ROLLUP_AFTER_MINUTES=5
 METRIC_ROLLUP_RETENTION_DAYS=365
 ```
 
+Ingest pressure controls are disabled by default. Set
+`INGEST_RATE_LIMIT_PER_MINUTE` to cap requests per bearer token, workspace,
+project, and scope. Set `INGEST_SAMPLE_RATE` between `0` and `1` to
+deterministically sample high-volume events, metrics, and logs while retaining
+connection and span lifecycle records.
+
 ### Minimal connection example
 
 This records a WebSocket session with two message events and then closes the

@@ -28,6 +28,7 @@ import {
   type OtlpDeps,
 } from "@/lib/effect/otlp";
 import { makeD1TelemetryRepository } from "@/lib/effect/repository";
+import { makeIngestPressureController } from "@/lib/effect/pressure";
 import { tenantScopeFromEnv } from "@/lib/tenant";
 
 function deps(c: Context<{ Bindings: Env }>, requiredScope: string): IngestDeps {
@@ -39,6 +40,7 @@ function deps(c: Context<{ Bindings: Env }>, requiredScope: string): IngestDeps 
     authorization: c.req.header("Authorization") ?? "",
     requiredScope,
     defaultTenant: tenantScopeFromEnv(c.env),
+    pressure: makeIngestPressureController(c.env.DB, c.env),
   };
 }
 
@@ -51,6 +53,7 @@ function otlpDeps(c: Context<{ Bindings: Env }>, requiredScope: string): OtlpDep
     authorization: c.req.header("Authorization") ?? "",
     requiredScope,
     defaultTenant: tenantScopeFromEnv(c.env),
+    pressure: makeIngestPressureController(c.env.DB, c.env),
   };
 }
 

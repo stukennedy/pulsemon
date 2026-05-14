@@ -4,6 +4,7 @@ import { MissingConfigError, UnauthorizedError } from "./errors";
 
 export interface ApiKeyContext extends TenantScope {
   readonly scopes: readonly string[];
+  readonly token_hash: string;
 }
 
 export interface ApiKeyDeps {
@@ -31,11 +32,22 @@ function tenantFromRecord(entry: Record<string, unknown> | null, fallback: Tenan
   };
 }
 
+function hashString(value: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 function contextForToken(
   raw: string,
   token: string,
   fallback: TenantScope
 ): Effect.Effect<ApiKeyContext | null, MissingConfigError> {
+  const token_hash = hashString(token);
+
   try {
     const parsed = record(JSON.parse(raw));
     if (!parsed) {
@@ -46,6 +58,7 @@ function contextForToken(
     if (Array.isArray(entry)) {
       return Effect.succeed({
         ...fallback,
+        token_hash,
         scopes: entry.filter((scope): scope is string => typeof scope === "string"),
       });
     }
@@ -55,6 +68,7 @@ function contextForToken(
     if (Array.isArray(scopes)) {
       return Effect.succeed({
         ...tenantFromRecord(entryRecord, fallback),
+        token_hash,
         scopes: scopes.filter((scope): scope is string => typeof scope === "string"),
       });
     }
@@ -96,6 +110,6 @@ export function authorizeIngest(
   }
 
   return token === expected
-    ? Effect.succeed({ ...deps.defaultTenant, scopes: ["*"] })
+    ? Effect.succeed({ ...deps.defaultTenant, token_hash: hashString(token), scopes: ["*"] })
     : Effect.fail(new UnauthorizedError({ message: "Unauthorized" }));
 }
