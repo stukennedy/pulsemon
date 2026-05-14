@@ -5,6 +5,9 @@
     "directory": "public"
   },
   "compatibility_date": "2025-02-18",
+  "triggers": {
+    "crons": ["*/15 * * * *"]
+  },
   "d1_databases": [
     {
       "binding": "DB",

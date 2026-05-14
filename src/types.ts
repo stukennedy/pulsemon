@@ -31,5 +31,9 @@ export interface Env {
   INGEST_MAX_BYTES?: string;
   DEFAULT_WORKSPACE_ID?: string;
   DEFAULT_PROJECT_ID?: string;
+  RETENTION_DAYS?: string;
+  METRIC_ROLLUP_AFTER_MINUTES?: string;
+  METRIC_ROLLUP_RETENTION_DAYS?: string;
+  MAINTENANCE_API_KEY?: string;
   UI_BASIC_AUTH?: string;
 }

@@ -123,6 +123,21 @@ export const agent_tool_calls = sqliteTable("agent_tool_calls", {
   metadata: text("metadata"),
 });
 
+export const metric_rollups_1m = sqliteTable("metric_rollups_1m", {
+  id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull().default("default"),
+  project_id: text("project_id").notNull().default("default"),
+  service: text("service").notNull(),
+  metric_name: text("metric_name").notNull(),
+  metric_type: text("metric_type").notNull(),
+  bucket_start: text("bucket_start").notNull(),
+  count: integer("count").notNull(),
+  avg: real("avg").notNull(),
+  min: real("min").notNull(),
+  max: real("max").notNull(),
+  sum: real("sum").notNull(),
+});
+
 export type Connection = typeof connections.$inferSelect;
 export type Span = typeof spans.$inferSelect;
 export type Event = typeof events.$inferSelect;
@@ -130,3 +145,4 @@ export type LogRecord = typeof logs.$inferSelect;
 export type Metric = typeof metrics.$inferSelect;
 export type VoiceTurn = typeof voice_turns.$inferSelect;
 export type AgentToolCall = typeof agent_tool_calls.$inferSelect;
+export type MetricRollup1m = typeof metric_rollups_1m.$inferSelect;

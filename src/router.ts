@@ -5,6 +5,7 @@ import * as api_connections from './routes/api/connections';
 import * as api_logs from './routes/api/logs';
 import * as api_metrics from './routes/api/metrics';
 import * as api_traces from './routes/api/traces';
+import * as api_admin_maintenance from './routes/api/admin/maintenance';
 import * as ingest from './routes/api/ingest';
 import * as connections_id from './routes/connections/[id]';
 import * as traces_id from './routes/traces/[id]';
@@ -22,6 +23,7 @@ export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.get('/api/logs', api_logs.onRequestGet);
 	app.get('/api/metrics', api_metrics.onRequestGet);
 	app.get('/api/traces', api_traces.onRequestGet);
+	app.post('/api/admin/maintenance', api_admin_maintenance.onRequestPost);
 
 	// Ingest API (authenticated)
 	app.post('/api/ingest/connections', ingest.postConnections);

@@ -80,6 +80,7 @@ wrangler secret put INGEST_API_KEYS # JSON map of bearer token to scopes
 wrangler secret put INGEST_MAX_BYTES
 wrangler secret put DEFAULT_WORKSPACE_ID
 wrangler secret put DEFAULT_PROJECT_ID
+wrangler secret put MAINTENANCE_API_KEY
 ```
 
 `UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
@@ -109,6 +110,18 @@ Read paths are filtered by `DEFAULT_WORKSPACE_ID` and `DEFAULT_PROJECT_ID`
 from the scoped key entry, or from those defaults when using the legacy single
 `INGEST_API_KEY`. The mixed `/api/ingest/batch` endpoint requires a scoped key
 with `*`.
+
+Retention and rollups run from the Worker cron every 15 minutes and can also be
+triggered with `POST /api/admin/maintenance` using
+`Authorization: Bearer <MAINTENANCE_API_KEY>`. The defaults keep raw telemetry
+for 30 days, roll up metric samples older than 5 minutes into
+`metric_rollups_1m`, and keep rollups for 365 days. Override with:
+
+```bash
+RETENTION_DAYS=30
+METRIC_ROLLUP_AFTER_MINUTES=5
+METRIC_ROLLUP_RETENTION_DAYS=365
+```
 
 ### Minimal connection example
 

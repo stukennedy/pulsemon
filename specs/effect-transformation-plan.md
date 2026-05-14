@@ -143,3 +143,6 @@ Expected outcomes:
 - 2026-05-14: added workspace/project tenancy across telemetry storage,
   ingest authorization context, query repositories, websocket sessions, and
   docs. Existing single-tenant deployments default to `default/default`.
+- 2026-05-14: added retention and rollup controls: scheduled maintenance,
+  manual `/api/admin/maintenance`, raw telemetry expiry, 1-minute metric
+  rollups, and validated retention configuration.

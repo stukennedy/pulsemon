@@ -1,8 +1,10 @@
 import { Hono } from "hono";
+import { Effect } from "effect";
 import type { Env } from "./types";
 import { loadLayouts } from "./layouts";
 import { loadRoutes } from "./router";
 import { checkUiAuth } from "./lib/auth";
+import { runMaintenanceFromEnv } from "./lib/effect/maintenance";
 
 export { SearchSession } from "./lib/search-session";
 
@@ -17,4 +19,13 @@ app.use("*", async (c, next) => {
 loadLayouts(app);
 loadRoutes(app);
 
-export default app;
+const handler: ExportedHandler<Env> = {
+  fetch(request, env, ctx) {
+    return app.fetch(request, env, ctx);
+  },
+  scheduled(_controller, env, ctx) {
+    ctx.waitUntil(Effect.runPromise(runMaintenanceFromEnv(env)));
+  },
+};
+
+export default handler;
