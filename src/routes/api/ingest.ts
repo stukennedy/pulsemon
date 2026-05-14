@@ -17,10 +17,11 @@ import {
   postSpan as postSpanEffect,
   type IngestDeps,
 } from "@/lib/effect/ingest";
+import { makeD1TelemetryRepository } from "@/lib/effect/repository";
 
 function deps(c: Context<{ Bindings: Env }>): IngestDeps {
   return {
-    db: c.env.DB,
+    repository: makeD1TelemetryRepository(c.env.DB),
     expectedApiKey: c.env.INGEST_API_KEY,
     authorization: c.req.header("Authorization") ?? "",
   };

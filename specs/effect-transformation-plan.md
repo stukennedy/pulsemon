@@ -112,3 +112,11 @@ Expected outcomes:
 - database failures are represented as `DatabaseError`;
 - route handlers become thin adapters around Effect programs.
 
+## Progress Log
+
+- 2026-05-14: completed and committed the first ingest boundary slice in
+  `e029bef`. The Hono ingest route now delegates to Effect programs backed by
+  Effect Schema validation and tagged ingest errors.
+- 2026-05-14: completed the repository boundary slice. D1 write construction is
+  behind `TelemetryRepository`, and ingest orchestration is now tested with
+  injected persistence dependencies.
