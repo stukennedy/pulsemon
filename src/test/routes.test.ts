@@ -74,6 +74,14 @@ describe("Page routes", () => {
     expect(html).toContain("ASR p95 latency");
   });
 
+  it("GET /slos returns SLO page", async () => {
+    const res = await ctx.request("/slos");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("SLO");
+    expect(html).toContain("Voice latency under 1.5s");
+  });
+
   it("GET /connections/:id returns 200 for existing connection", async () => {
     ctx.seedConnection({ id: "conn-test-123", service: "voice-gateway" });
 

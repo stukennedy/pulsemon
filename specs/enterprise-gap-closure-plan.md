@@ -67,3 +67,5 @@ ordered D1 SQL migration, and run the full test suite.
 - 2026-05-14: added alert notification fan-out for Slack incoming webhooks,
   PagerDuty Events API v2 trigger/resolve events, and email-provider webhook
   bridges alongside the existing generic webhook.
+- 2026-05-14: added metric-backed SLO definitions, SLO evaluation persistence,
+  scheduled SLO evaluation, `/api/slos`, and an `/slos` error-budget view.

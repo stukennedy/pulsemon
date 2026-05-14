@@ -45,6 +45,7 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 | `/logs` | Structured log browser with faceted search |
 | `/metrics` | Queryable metrics summaries and recent samples |
 | `/monitors` | Realtime voice, agent, and connection monitor evaluations |
+| `/slos` | Metric-backed SLO attainment and error-budget view |
 | `/traces` | Trace list grouped by trace ID |
 | `/traces/:id` | Waterfall trace view |
 | `/voice` | Voice pipeline and realtime session summaries |
@@ -156,6 +157,10 @@ METRIC_ROLLUP_RETENTION_DAYS=365
 
 Manual maintenance attempts are stored in `audit_events`; admin users can read
 recent audit entries from `/api/admin/audit`.
+
+SLOs are available at `/slos` and `/api/slos`. SLO definitions are stored in
+`slo_definitions`; evaluations calculate metric-threshold attainment, good/total
+event counts, and remaining error budget into `slo_evaluations`.
 
 Ingest pressure controls are disabled by default. Set
 `INGEST_RATE_LIMIT_PER_MINUTE` to cap requests per bearer token, workspace,
@@ -484,6 +489,7 @@ await batch.flush();
 | `GET` | `/api/traces` | HTML trace table for the UI |
 | `GET` | `/api/sessions` | JSON realtime voice/agent session summaries |
 | `GET` | `/api/sessions/:id` | JSON session timeline with turns, tools, spans, logs, and events |
+| `GET` | `/api/slos` | JSON SLO definitions and latest evaluations |
 | `GET` | `/api/monitors` | JSON realtime monitor evaluations |
 | `GET` | `/api/admin/audit` | JSON audit events for admin users |
 | `GET` | `/api/admin/monitors` | JSON monitor definitions for admin users |

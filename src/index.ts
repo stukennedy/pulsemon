@@ -7,6 +7,7 @@ import { checkUiAuth } from "./lib/auth";
 import { alertConfigFromEnv, processMonitorAlerts } from "./lib/effect/alerts";
 import { runMaintenanceFromEnv } from "./lib/effect/maintenance";
 import { evaluateAndPersistRealtimeMonitors } from "./lib/effect/monitors";
+import { evaluateAndPersistSlos } from "./lib/effect/slos";
 import { tenantScopeFromEnv } from "./lib/tenant";
 
 export { SearchSession } from "./lib/search-session";
@@ -34,6 +35,7 @@ const handler: ExportedHandler<Env> = {
         const monitors = yield* evaluateAndPersistRealtimeMonitors(env.DB, tenant);
         return yield* processMonitorAlerts(env.DB, tenant, monitors, alertConfigFromEnv(env));
       }),
+      evaluateAndPersistSlos(env.DB, tenant),
     ], { concurrency: 1 })));
   },
 };

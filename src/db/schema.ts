@@ -234,6 +234,38 @@ export const audit_events = sqliteTable("audit_events", {
   created_at: text("created_at").notNull(),
 });
 
+export const slo_definitions = sqliteTable("slo_definitions", {
+  id: text("id").notNull(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  name: text("name").notNull(),
+  metric_name: text("metric_name").notNull(),
+  service: text("service"),
+  objective_percent: real("objective_percent").notNull(),
+  threshold: real("threshold").notNull(),
+  window_minutes: integer("window_minutes").notNull(),
+  enabled: integer("enabled").notNull().default(1),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.workspace_id, table.project_id, table.id] }),
+]);
+
+export const slo_evaluations = sqliteTable("slo_evaluations", {
+  id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  slo_id: text("slo_id").notNull(),
+  name: text("name").notNull(),
+  objective_percent: real("objective_percent").notNull(),
+  attainment_percent: real("attainment_percent"),
+  error_budget_remaining_percent: real("error_budget_remaining_percent"),
+  good_events: integer("good_events").notNull(),
+  total_events: integer("total_events").notNull(),
+  window_minutes: integer("window_minutes").notNull(),
+  evaluated_at: text("evaluated_at").notNull(),
+});
+
 export type Connection = typeof connections.$inferSelect;
 export type Span = typeof spans.$inferSelect;
 export type Event = typeof events.$inferSelect;
@@ -249,3 +281,5 @@ export type MonitorDefinitionRecord = typeof monitor_definitions.$inferSelect;
 export type AlertIncident = typeof alert_incidents.$inferSelect;
 export type AlertNotification = typeof alert_notifications.$inferSelect;
 export type AuditEvent = typeof audit_events.$inferSelect;
+export type SloDefinitionRecord = typeof slo_definitions.$inferSelect;
+export type SloEvaluationRecord = typeof slo_evaluations.$inferSelect;

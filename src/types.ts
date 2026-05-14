@@ -6,6 +6,8 @@ export type {
   LogRecord,
   Metric,
   MonitorDefinitionRecord,
+  SloDefinitionRecord,
+  SloEvaluationRecord,
   Span,
   VoiceTurn,
 } from "@/db/schema";

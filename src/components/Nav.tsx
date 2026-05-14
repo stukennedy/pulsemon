@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { href: "/logs", label: "Logs", icon: "≡" },
   { href: "/metrics", label: "Metrics", icon: "▥" },
   { href: "/monitors", label: "Monitors", icon: "!" },
+  { href: "/slos", label: "SLOs", icon: "%" },
   { href: "/traces", label: "Traces", icon: "⋮" },
   { href: "/voice", label: "Voice", icon: "◎" },
 ];
