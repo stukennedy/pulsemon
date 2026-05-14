@@ -1,12 +1,28 @@
 import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import { Nav } from "@/components/Nav";
 import { VoicePipelineView } from "@/components/VoicePipeline";
-import { querySpans } from "@/lib/facets";
+import { errorStatus } from "@/lib/effect/errors";
+import {
+  makeD1TelemetryQueryRepository,
+  querySpans,
+} from "@/lib/effect/query";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
-  // Get all voice-related spans
-  const { spans } = await querySpans(c.env.DB, [], 500);
+  const result = await Effect.runPromise(Effect.either(querySpans(
+    { repository: makeD1TelemetryQueryRepository(c.env.DB) },
+    [],
+    { limit: 500 }
+  )));
+
+  if (Either.isLeft(result)) {
+    const error = result.left;
+    return c.text(error.message, errorStatus(error) as ContentfulStatusCode);
+  }
+
+  const { spans } = result.right;
   const voiceSpans = spans.filter((s) =>
     ["asr", "llm", "tts"].some((prefix) => s.operation.startsWith(prefix))
   );

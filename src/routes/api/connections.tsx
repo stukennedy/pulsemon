@@ -1,6 +1,12 @@
 import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { Effect, Either } from "effect";
 import type { ActiveTag, Env } from "@/types";
-import { queryConnections } from "@/lib/facets";
+import { errorStatus } from "@/lib/effect/errors";
+import {
+  makeD1TelemetryQueryRepository,
+  queryConnections,
+} from "@/lib/effect/query";
 import { ConnectionTable } from "@/components/ConnectionTable";
 
 function parseTags(s: string): ActiveTag[] {
@@ -13,6 +19,16 @@ function parseTags(s: string): ActiveTag[] {
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const tags = parseTags(c.req.query("tags") || "");
-  const { connections, total } = await queryConnections(c.env.DB, tags);
+  const result = await Effect.runPromise(Effect.either(queryConnections(
+    { repository: makeD1TelemetryQueryRepository(c.env.DB) },
+    tags
+  )));
+
+  if (Either.isLeft(result)) {
+    const error = result.left;
+    return c.text(error.message, errorStatus(error) as ContentfulStatusCode);
+  }
+
+  const { connections, total } = result.right;
   return c.html(<ConnectionTable connections={connections} total={total} />);
 };

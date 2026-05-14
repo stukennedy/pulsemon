@@ -1,11 +1,19 @@
 import { DurableObject } from "cloudflare:workers";
+import { Effect } from "effect";
 import type { ActiveTag, Env } from "../types";
 import {
   CONNECTION_FACET_NAMES, SPAN_FACET_NAMES,
-  getConnectionFacetValues, getSpanFacetValues,
-  queryConnections, querySpans,
 } from "./facets";
-import { queryConnectionStats } from "./stats";
+import {
+  getConnectionFacetValues as getConnectionFacetValuesEffect,
+  getSpanFacetValues as getSpanFacetValuesEffect,
+  makeD1TelemetryQueryRepository,
+  queryConnectionStats as queryConnectionStatsEffect,
+  queryConnections as queryConnectionsEffect,
+  querySpans as querySpansEffect,
+  type QueryDeps,
+} from "./effect/query";
+import type { QueryError } from "./effect/errors";
 import { jsxToString } from "./render";
 import { ConnectionTable } from "@/components/ConnectionTable";
 import { TraceList } from "@/components/TraceWaterfall";
@@ -28,14 +36,15 @@ export class SearchSession extends DurableObject<Env> {
     this.ctx.acceptWebSocket(server);
 
     if (this.view === "connections") {
+      const deps = this.queryDeps();
       const [{ connections, total }, stats] = await Promise.all([
-        queryConnections(this.env.DB, this.tags),
-        queryConnectionStats(this.env.DB, this.tags),
+        this.runQuery(queryConnectionsEffect(deps, this.tags)),
+        this.runQuery(queryConnectionStatsEffect(deps, this.tags)),
       ]);
       this.sendUi(server, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })));
       this.sendUi(server, "#stats-bar", "outerHTML", await jsxToString(ConnectionStatsBar({ stats })));
     } else if (this.view === "traces") {
-      const { spans, total } = await querySpans(this.env.DB, this.tags);
+      const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), this.tags));
       this.sendUi(server, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
     }
 
@@ -84,10 +93,18 @@ export class SearchSession extends DurableObject<Env> {
     return this.view === "traces" ? SPAN_FACET_NAMES : CONNECTION_FACET_NAMES;
   }
 
+  private queryDeps(): QueryDeps {
+    return { repository: makeD1TelemetryQueryRepository(this.env.DB) };
+  }
+
+  private runQuery<A>(program: Effect.Effect<A, QueryError>): Promise<A> {
+    return Effect.runPromise(program);
+  }
+
   private async getFacetValues(facet: string, prefix: string, tags: ActiveTag[]): Promise<string[]> {
     return this.view === "traces"
-      ? getSpanFacetValues(this.env.DB, facet, prefix, tags)
-      : getConnectionFacetValues(this.env.DB, facet, prefix, tags);
+      ? this.runQuery(getSpanFacetValuesEffect(this.queryDeps(), facet, prefix, tags))
+      : this.runQuery(getConnectionFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
   }
 
   private async handleSuggest(ws: WebSocket, query: string, activeTags: ActiveTag[], requestId?: string) {
@@ -126,10 +143,10 @@ export class SearchSession extends DurableObject<Env> {
 
   private async refreshTable(ws: WebSocket, tags: ActiveTag[]) {
     if (this.view === "connections") {
-      const { connections, total } = await queryConnections(this.env.DB, tags);
+      const { connections, total } = await this.runQuery(queryConnectionsEffect(this.queryDeps(), tags));
       this.sendUi(ws, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })));
     } else if (this.view === "traces") {
-      const { spans, total } = await querySpans(this.env.DB, tags);
+      const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), tags));
       this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
     }
   }
@@ -138,14 +155,15 @@ export class SearchSession extends DurableObject<Env> {
     const tagsStr = tags.map((t) => `${t.facet}:${t.value}`).join("|");
 
     if (this.view === "connections") {
+      const deps = this.queryDeps();
       const [{ connections, total }, stats] = await Promise.all([
-        queryConnections(this.env.DB, tags),
-        queryConnectionStats(this.env.DB, tags),
+        this.runQuery(queryConnectionsEffect(deps, tags)),
+        this.runQuery(queryConnectionStatsEffect(deps, tags)),
       ]);
       this.sendUi(ws, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })));
       this.sendUi(ws, "#stats-bar", "outerHTML", await jsxToString(ConnectionStatsBar({ stats })));
     } else if (this.view === "traces") {
-      const { spans, total } = await querySpans(this.env.DB, tags);
+      const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), tags));
       this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
     }
 

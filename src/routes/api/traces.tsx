@@ -1,6 +1,12 @@
 import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { Effect, Either } from "effect";
 import type { ActiveTag, Env } from "@/types";
-import { querySpans } from "@/lib/facets";
+import { errorStatus } from "@/lib/effect/errors";
+import {
+  makeD1TelemetryQueryRepository,
+  querySpans,
+} from "@/lib/effect/query";
 import { TraceList } from "@/components/TraceWaterfall";
 
 function parseTags(s: string): ActiveTag[] {
@@ -13,6 +19,16 @@ function parseTags(s: string): ActiveTag[] {
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const tags = parseTags(c.req.query("tags") || "");
-  const { spans, total } = await querySpans(c.env.DB, tags);
+  const result = await Effect.runPromise(Effect.either(querySpans(
+    { repository: makeD1TelemetryQueryRepository(c.env.DB) },
+    tags
+  )));
+
+  if (Either.isLeft(result)) {
+    const error = result.left;
+    return c.text(error.message, errorStatus(error) as ContentfulStatusCode);
+  }
+
+  const { spans, total } = result.right;
   return c.html(<TraceList spans={spans} total={total} />);
 };

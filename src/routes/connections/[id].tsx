@@ -1,12 +1,28 @@
 import type { Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
+import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import { Nav } from "@/components/Nav";
 import { ConnectionDetail } from "@/components/ConnectionDetail";
-import { getConnectionDetail } from "@/lib/facets";
+import { errorStatus } from "@/lib/effect/errors";
+import {
+  getConnectionDetail,
+  makeD1TelemetryQueryRepository,
+} from "@/lib/effect/query";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const id = c.req.param("id");
-  const { connection, events, spans } = await getConnectionDetail(c.env.DB, id);
+  const result = await Effect.runPromise(Effect.either(getConnectionDetail(
+    { repository: makeD1TelemetryQueryRepository(c.env.DB) },
+    id
+  )));
+
+  if (Either.isLeft(result)) {
+    const error = result.left;
+    return c.text(error.message, errorStatus(error) as ContentfulStatusCode);
+  }
+
+  const { connection, events, spans } = result.right;
 
   if (!connection) {
     return c.render(

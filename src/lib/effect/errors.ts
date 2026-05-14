@@ -16,6 +16,10 @@ export class PayloadTooLargeError extends Data.TaggedError("PayloadTooLargeError
   readonly message: string;
 }> {}
 
+export class NotFoundError extends Data.TaggedError("NotFoundError")<{
+  readonly message: string;
+}> {}
+
 export class DatabaseError extends Data.TaggedError("DatabaseError")<{
   readonly message: string;
 }> {}
@@ -27,12 +31,21 @@ export type IngestError =
   | PayloadTooLargeError
   | DatabaseError;
 
-export function errorStatus(error: IngestError): number {
+export type QueryError =
+  | ValidationError
+  | NotFoundError
+  | DatabaseError;
+
+export type AppError = IngestError | QueryError;
+
+export function errorStatus(error: AppError): number {
   switch (error._tag) {
     case "MissingConfigError":
       return 503;
     case "UnauthorizedError":
       return 401;
+    case "NotFoundError":
+      return 404;
     case "ValidationError":
     case "PayloadTooLargeError":
       return 400;
@@ -40,4 +53,3 @@ export function errorStatus(error: IngestError): number {
       return 500;
   }
 }
-

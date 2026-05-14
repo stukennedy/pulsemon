@@ -120,3 +120,7 @@ Expected outcomes:
 - 2026-05-14: completed the repository boundary slice. D1 write construction is
   behind `TelemetryRepository`, and ingest orchestration is now tested with
   injected persistence dependencies.
+- 2026-05-14: completed the read/query boundary slice. Routes and the realtime
+  search session now call a typed Effect `QueryService` backed by
+  `TelemetryQueryRepository`, with pagination validation and tagged database
+  errors.
