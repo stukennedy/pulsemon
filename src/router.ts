@@ -2,6 +2,7 @@
 import { Hono, Env } from 'hono';
 
 import * as api_admin_audit from './routes/api/admin/audit';
+import * as api_admin_auth_policy from './routes/api/admin/auth/policy';
 import * as api_admin_maintenance from './routes/api/admin/maintenance';
 import * as api_admin_monitors from './routes/api/admin/monitors';
 import * as api_admin_monitors_id from './routes/api/admin/monitors/[id]';
@@ -30,6 +31,7 @@ import * as index from './routes';
 
 export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.get('/api/admin/audit', api_admin_audit.onRequestGet);
+	app.get('/api/admin/auth/policy', api_admin_auth_policy.onRequestGet);
 	app.post('/api/admin/maintenance', api_admin_maintenance.onRequestPost);
 	app.get('/api/admin/monitors', api_admin_monitors.onRequestGet);
 	app.post('/api/admin/monitors', api_admin_monitors.onRequestPost);

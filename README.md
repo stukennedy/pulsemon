@@ -103,6 +103,7 @@ wrangler secret put ALERT_SLACK_WEBHOOK_URL
 wrangler secret put ALERT_PAGERDUTY_ROUTING_KEY
 wrangler secret put ALERT_EMAIL_WEBHOOK_URL
 wrangler secret put UI_USERS
+wrangler secret put UI_ROLE_GROUPS
 ```
 
 `UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
@@ -115,6 +116,22 @@ wrangler secret put UI_USERS
   "bob": { "password": "readonly", "role": "viewer" }
 }
 ```
+
+OIDC/SSO policy groundwork is available through `UI_ROLE_GROUPS` and the OIDC
+metadata env vars. This maps verified OIDC claims to Pulsemon roles; the current
+login flow still uses Basic auth until a full OIDC callback/session flow is
+enabled:
+
+```json
+{
+  "admin": { "groups": ["platform-admins"] },
+  "viewer": { "emails": ["viewer@example.com"], "groups": ["engineering"] }
+}
+```
+
+Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_AUTHORIZATION_ENDPOINT`, and
+`OIDC_TOKEN_ENDPOINT` to expose sanitized policy metadata at
+`/api/admin/auth/policy`.
 
 `INGEST_MAX_BYTES` defaults to `1000000` bytes and rejects oversized ingest
 payloads before decoding JSON.
@@ -492,6 +509,7 @@ await batch.flush();
 | `GET` | `/api/slos` | JSON SLO definitions and latest evaluations |
 | `GET` | `/api/monitors` | JSON realtime monitor evaluations |
 | `GET` | `/api/admin/audit` | JSON audit events for admin users |
+| `GET` | `/api/admin/auth/policy` | Sanitized auth/OIDC role policy for admin users |
 | `GET` | `/api/admin/monitors` | JSON monitor definitions for admin users |
 | `POST` | `/api/admin/monitors` | Create a custom monitor definition |
 | `PATCH` | `/api/admin/monitors/:id` | Update a monitor definition |

@@ -56,4 +56,9 @@ export interface Env {
   ALERT_EMAIL_WEBHOOK_URL?: string;
   UI_BASIC_AUTH?: string;
   UI_USERS?: string;
+  UI_ROLE_GROUPS?: string;
+  OIDC_ISSUER?: string;
+  OIDC_CLIENT_ID?: string;
+  OIDC_AUTHORIZATION_ENDPOINT?: string;
+  OIDC_TOKEN_ENDPOINT?: string;
 }
