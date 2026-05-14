@@ -53,6 +53,17 @@ describe("Page routes", () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("Voice");
+    expect(html).toContain("Recent Voice Sessions");
+  });
+
+  it("GET /sessions/:id returns session detail page", async () => {
+    ctx.seedVoiceTurn({ session_id: "session-route", connection_id: "conn-route", transcript: "hello route" });
+
+    const res = await ctx.request("/sessions/session-route");
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("session-route");
+    expect(html).toContain("hello route");
   });
 
   it("GET /monitors returns monitor evaluations page", async () => {

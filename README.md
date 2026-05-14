@@ -47,7 +47,8 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 | `/monitors` | Realtime voice, agent, and connection monitor evaluations |
 | `/traces` | Trace list grouped by trace ID |
 | `/traces/:id` | Waterfall trace view |
-| `/voice` | Voice pipeline view — ASR→LLM→TTS flow |
+| `/voice` | Voice pipeline and realtime session summaries |
+| `/sessions/:id` | Realtime voice/agent session timeline |
 
 ## Using Pulsemon
 
@@ -142,6 +143,10 @@ Monitor evaluations are available at `/monitors` and `/api/monitors`. They
 currently cover ASR/LLM/TTS p95 latency, voice interruption rate, agent tool
 error rate, and connection error rate over a 15-minute window, and each
 evaluation is stored in `monitor_evaluations`.
+
+Voice sessions are available at `/voice`, `/sessions/:id`, `/api/sessions`, and
+`/api/sessions/:id`. Session detail correlates voice turns, tool calls, spans,
+logs, and events by `session_id`, `connection_id`, and `trace_id`.
 
 ### Minimal connection example
 
@@ -407,6 +412,18 @@ await batch.flush();
 | `POST` | `/api/ingest/otlp/v1/traces` | Translate OTLP JSON traces into spans |
 | `POST` | `/api/ingest/otlp/v1/metrics` | Translate OTLP JSON metrics into samples |
 | `POST` | `/api/ingest/otlp/v1/logs` | Translate OTLP JSON logs into log records |
+
+### Read APIs
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/api/connections` | HTML connection table for the UI |
+| `GET` | `/api/logs` | HTML log table for the UI |
+| `GET` | `/api/metrics` | HTML metrics table for the UI |
+| `GET` | `/api/traces` | HTML trace table for the UI |
+| `GET` | `/api/sessions` | JSON realtime voice/agent session summaries |
+| `GET` | `/api/sessions/:id` | JSON session timeline with turns, tools, spans, logs, and events |
+| `GET` | `/api/monitors` | JSON realtime monitor evaluations |
 
 `connections` and `spans` inserts are idempotent by `id`: duplicate IDs are
 ignored. Use the `PATCH` endpoints when a connection or span changes state after

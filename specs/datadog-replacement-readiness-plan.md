@@ -115,3 +115,6 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: added the first TypeScript SDK implementation with typed client
   helpers, W3C traceparent utilities, retrying transport, `withSpan`, buffered
   batching, and SDK tests.
+- 2026-05-14: started voice/agent product UI by adding session summaries,
+  `/api/sessions`, `/api/sessions/:id`, `/sessions/:id`, and a timeline that
+  correlates voice turns, agent tool calls, spans, logs, and events.

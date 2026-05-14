@@ -77,6 +77,18 @@ export interface TestContext {
     id: string; service: string; metric_name: string; metric_type: string;
     timestamp: string; value: number; tags: string; workspace_id: string; project_id: string;
   }>) => void;
+  seedVoiceTurn: (overrides?: Partial<{
+    id: string; connection_id: string; session_id: string; trace_id: string; turn_index: number;
+    role: string; started_at: string; transcript: string; interruption: number;
+    asr_latency_ms: number; llm_latency_ms: number; tts_latency_ms: number;
+    input_tokens: number; output_tokens: number; cost_usd: number;
+    workspace_id: string; project_id: string;
+  }>) => void;
+  seedAgentToolCall: (overrides?: Partial<{
+    id: string; trace_id: string; span_id: string; connection_id: string; session_id: string;
+    turn_id: string; tool_name: string; started_at: string; duration_ms: number;
+    status: string; retry_count: number; error: string; workspace_id: string; project_id: string;
+  }>) => void;
 }
 
 export interface TestContextOptions {
@@ -218,7 +230,74 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
     );
   };
 
+  const seedVoiceTurn = (overrides?: any) => {
+    seq++;
+    sqlite.prepare(`
+      INSERT INTO voice_turns (
+        id, workspace_id, project_id, connection_id, session_id, trace_id, turn_index, role, started_at,
+        transcript, interruption, asr_latency_ms, llm_latency_ms, tts_latency_ms, input_tokens, output_tokens, cost_usd
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      overrides?.id ?? `turn-${seq}`,
+      overrides?.workspace_id ?? "default",
+      overrides?.project_id ?? "default",
+      overrides?.connection_id ?? null,
+      overrides?.session_id ?? `session-${seq}`,
+      overrides?.trace_id ?? `trace-${seq}`,
+      overrides?.turn_index ?? seq,
+      overrides?.role ?? "user",
+      overrides?.started_at ?? new Date(Date.now() - seq * 1000).toISOString(),
+      overrides?.transcript ?? "hello",
+      overrides?.interruption ?? 0,
+      overrides?.asr_latency_ms ?? null,
+      overrides?.llm_latency_ms ?? null,
+      overrides?.tts_latency_ms ?? null,
+      overrides?.input_tokens ?? 0,
+      overrides?.output_tokens ?? 0,
+      overrides?.cost_usd ?? 0,
+    );
+  };
+
+  const seedAgentToolCall = (overrides?: any) => {
+    seq++;
+    sqlite.prepare(`
+      INSERT INTO agent_tool_calls (
+        id, workspace_id, project_id, trace_id, span_id, connection_id, session_id, turn_id,
+        tool_name, started_at, duration_ms, status, retry_count, error
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      overrides?.id ?? `tool-${seq}`,
+      overrides?.workspace_id ?? "default",
+      overrides?.project_id ?? "default",
+      overrides?.trace_id ?? null,
+      overrides?.span_id ?? null,
+      overrides?.connection_id ?? null,
+      overrides?.session_id ?? `session-${seq}`,
+      overrides?.turn_id ?? null,
+      overrides?.tool_name ?? "lookup_account",
+      overrides?.started_at ?? new Date(Date.now() - seq * 1000).toISOString(),
+      overrides?.duration_ms ?? 100,
+      overrides?.status ?? "ok",
+      overrides?.retry_count ?? 0,
+      overrides?.error ?? null,
+    );
+  };
+
   const request = async (path: string, init?: RequestInit) => app.request(path, init);
 
-  return { app, sqlite, d1, request, seedConnection, seedSpan, seedEvent, seedLog, seedMetric };
+  return {
+    app,
+    sqlite,
+    d1,
+    request,
+    seedConnection,
+    seedSpan,
+    seedEvent,
+    seedLog,
+    seedMetric,
+    seedVoiceTurn,
+    seedAgentToolCall,
+  };
 }
