@@ -5,6 +5,7 @@ export type {
   Event,
   LogRecord,
   Metric,
+  MonitorDefinitionRecord,
   Span,
   VoiceTurn,
 } from "@/db/schema";

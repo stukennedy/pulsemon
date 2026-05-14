@@ -146,3 +146,6 @@ Control risk in high-volume, multi-team telemetry.
   log bodies, and gzip-compatible binary request handling.
 - 2026-05-14: added an operations readiness runbook and `bun run smoke` for
   deployment-level ingest/query/maintenance smoke checks.
+- 2026-05-14: started enterprise gap closure by replacing hardcoded-only
+  monitor rules with persisted monitor definitions, admin monitor APIs, and a
+  custom metric monitor creation path.

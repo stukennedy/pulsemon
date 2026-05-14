@@ -182,13 +182,15 @@ keeps a per-workspace/project/scope ledger of unique structured attribute/tag
 values and rejects ingest that would exceed the configured unique-value budget
 for a key such as `metrics.tags.provider` or `agent_tool_calls.input.customer_id`.
 
-Monitor evaluations are available at `/monitors` and `/api/monitors`. They
-currently cover ASR/LLM/TTS p95 latency, voice interruption rate, agent tool
-error rate, and connection error rate over a 15-minute window, and each
-evaluation is stored in `monitor_evaluations`. Alert incidents are opened and
-resolved from those evaluations in `alert_incidents`; when `ALERT_WEBHOOK_URL`
-is set, Pulsemon posts `opened` and `resolved` notifications and stores delivery
-attempts in `alert_notifications`.
+Monitor evaluations are available at `/monitors` and `/api/monitors`. Default
+monitor definitions cover ASR/LLM/TTS p95 latency, voice interruption rate,
+agent tool error rate, and connection error rate. Definitions are stored in
+`monitor_definitions`; admin users can list and write them through
+`/api/admin/monitors`, and `/monitors` includes a compact form for adding
+metric average monitors. Each evaluation is stored in `monitor_evaluations`.
+Alert incidents are opened and resolved from those evaluations in
+`alert_incidents`; when `ALERT_WEBHOOK_URL` is set, Pulsemon posts `opened` and
+`resolved` notifications and stores delivery attempts in `alert_notifications`.
 
 Voice sessions are available at `/voice`, `/sessions/:id`, `/api/sessions`, and
 `/api/sessions/:id`. Session detail correlates voice turns, tool calls, spans,
@@ -477,6 +479,10 @@ await batch.flush();
 | `GET` | `/api/sessions/:id` | JSON session timeline with turns, tools, spans, logs, and events |
 | `GET` | `/api/monitors` | JSON realtime monitor evaluations |
 | `GET` | `/api/admin/audit` | JSON audit events for admin users |
+| `GET` | `/api/admin/monitors` | JSON monitor definitions for admin users |
+| `POST` | `/api/admin/monitors` | Create a custom monitor definition |
+| `PATCH` | `/api/admin/monitors/:id` | Update a monitor definition |
+| `DELETE` | `/api/admin/monitors/:id` | Delete a monitor definition |
 
 `connections` and `spans` inserts are idempotent by `id`: duplicate IDs are
 ignored. Use the `PATCH` endpoints when a connection or span changes state after

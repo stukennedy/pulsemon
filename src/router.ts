@@ -3,6 +3,8 @@ import { Hono, Env } from 'hono';
 
 import * as api_admin_audit from './routes/api/admin/audit';
 import * as api_admin_maintenance from './routes/api/admin/maintenance';
+import * as api_admin_monitors from './routes/api/admin/monitors';
+import * as api_admin_monitors_id from './routes/api/admin/monitors/[id]';
 import * as api_metrics_timeseries from './routes/api/metrics/timeseries';
 import * as api_sessions_id from './routes/api/sessions/[id]';
 import * as api_connections from './routes/api/connections';
@@ -27,6 +29,10 @@ import * as index from './routes';
 export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.get('/api/admin/audit', api_admin_audit.onRequestGet);
 	app.post('/api/admin/maintenance', api_admin_maintenance.onRequestPost);
+	app.get('/api/admin/monitors', api_admin_monitors.onRequestGet);
+	app.post('/api/admin/monitors', api_admin_monitors.onRequestPost);
+	app.patch('/api/admin/monitors/:id', api_admin_monitors_id.onRequestPatch);
+	app.delete('/api/admin/monitors/:id', api_admin_monitors_id.onRequestDelete);
 	app.get('/api/metrics/timeseries', api_metrics_timeseries.onRequestGet);
 	app.get('/api/sessions/:id', api_sessions_id.onRequestGet);
 	app.get('/api/connections', api_connections.onRequestGet);
@@ -55,6 +61,7 @@ export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.get('/logs', logs_index.onRequestGet);
 	app.get('/metrics', metrics_index.onRequestGet);
 	app.get('/monitors', monitors.onRequestGet);
+	app.post('/monitors', monitors.onRequestPost);
 	app.get('/traces', traces_index.onRequestGet);
 	app.get('/voice', voice.onRequestGet);
 	app.get('/ws', ws.onRequestGet);

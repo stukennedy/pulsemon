@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { sqliteTable, text, integer, real, primaryKey } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 export const connections = sqliteTable("connections", {
@@ -172,6 +172,24 @@ export const monitor_evaluations = sqliteTable("monitor_evaluations", {
   evaluated_at: text("evaluated_at").notNull(),
 });
 
+export const monitor_definitions = sqliteTable("monitor_definitions", {
+  id: text("id").notNull(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  name: text("name").notNull(),
+  kind: text("kind").notNull(),
+  metric_name: text("metric_name"),
+  service: text("service"),
+  threshold: real("threshold").notNull(),
+  window_minutes: integer("window_minutes").notNull(),
+  description: text("description").notNull(),
+  enabled: integer("enabled").notNull().default(1),
+  created_at: text("created_at").notNull(),
+  updated_at: text("updated_at").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.workspace_id, table.project_id, table.id] }),
+]);
+
 export const alert_incidents = sqliteTable("alert_incidents", {
   id: text("id").primaryKey(),
   workspace_id: text("workspace_id").notNull(),
@@ -227,6 +245,7 @@ export type MetricRollup1m = typeof metric_rollups_1m.$inferSelect;
 export type IngestRateLimit = typeof ingest_rate_limits.$inferSelect;
 export type IngestCardinalityValue = typeof ingest_cardinality_values.$inferSelect;
 export type MonitorEvaluationRecord = typeof monitor_evaluations.$inferSelect;
+export type MonitorDefinitionRecord = typeof monitor_definitions.$inferSelect;
 export type AlertIncident = typeof alert_incidents.$inferSelect;
 export type AlertNotification = typeof alert_notifications.$inferSelect;
 export type AuditEvent = typeof audit_events.$inferSelect;
