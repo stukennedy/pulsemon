@@ -15,7 +15,7 @@ export { SearchSession } from "./lib/search-session";
 const app = new Hono<{ Bindings: Env }>();
 
 app.use("*", async (c, next) => {
-  const authResponse = checkUiAuth(c);
+  const authResponse = await checkUiAuth(c);
   if (authResponse) return authResponse;
   await next();
 });

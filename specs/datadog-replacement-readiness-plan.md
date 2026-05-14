@@ -98,8 +98,8 @@ Control risk in high-volume, multi-team telemetry.
 - PII redaction and attribute allow/deny lists.
 - Cardinality budgets per workspace/project/scope.
 - Per-signal retention and sampling policies.
-- RBAC and audit logs beyond Basic auth. Initial UI roles and admin audit
-  events are in place; full enterprise SSO/team policy remains.
+- RBAC and audit logs beyond Basic auth. UI roles, admin audit events, and OIDC
+  authorization-code login/session handling are in place.
 
 ## Execution Order
 
@@ -153,3 +153,5 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: added `bun run restore:check` and `bun run capacity:check` for
   restore validation, ingest/readback capacity gates, and documented rollout
   criteria.
+- 2026-05-14: added OIDC authorization-code login, callback/session handling,
+  signed UI cookies, logout, and auth audit events.

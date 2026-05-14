@@ -71,10 +71,12 @@ ordered D1 SQL migration, and run the full test suite.
 - 2026-05-14: added metric-backed SLO definitions, SLO evaluation persistence,
   scheduled SLO evaluation, `/api/slos`, and an `/slos` error-budget view.
 - 2026-05-14: added OIDC-oriented auth policy groundwork with role mapping from
-  verified claims and an admin policy inspection API; full callback/session
-  login remains the next auth increment.
+  verified claims and an admin policy inspection API.
 - 2026-05-14: added repo-owned OTLP JSON/protobuf/gzip fixtures, routed OTLP
   tests through those fixtures, and documented the compatibility matrix plus
   rollout certification checklist.
 - 2026-05-14: added restore validation and capacity gate scripts with
   documented restore drill criteria, capacity thresholds, and rollout gates.
+- 2026-05-14: completed the OIDC login/session increment with authorization
+  redirects, callback token exchange, signed state/session cookies, logout, and
+  auth audit events.

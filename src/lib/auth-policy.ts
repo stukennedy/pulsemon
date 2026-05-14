@@ -12,6 +12,7 @@ export interface AuthPolicy {
     readonly clientId?: string;
     readonly authorizationEndpoint?: string;
     readonly tokenEndpoint?: string;
+    readonly userinfoEndpoint?: string;
     readonly configured: boolean;
   };
   readonly roles: {
@@ -34,6 +35,7 @@ type AuthPolicyEnv = Pick<
   | "OIDC_CLIENT_ID"
   | "OIDC_AUTHORIZATION_ENDPOINT"
   | "OIDC_TOKEN_ENDPOINT"
+  | "OIDC_USERINFO_ENDPOINT"
 >;
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -88,6 +90,7 @@ export function authPolicyFromEnv(env: AuthPolicyEnv): AuthPolicy {
   const clientId = envString(env.OIDC_CLIENT_ID);
   const authorizationEndpoint = envString(env.OIDC_AUTHORIZATION_ENDPOINT);
   const tokenEndpoint = envString(env.OIDC_TOKEN_ENDPOINT);
+  const userinfoEndpoint = envString(env.OIDC_USERINFO_ENDPOINT);
 
   return {
     oidc: {
@@ -95,6 +98,7 @@ export function authPolicyFromEnv(env: AuthPolicyEnv): AuthPolicy {
       clientId,
       authorizationEndpoint,
       tokenEndpoint,
+      userinfoEndpoint,
       configured: Boolean(issuer && clientId && authorizationEndpoint && tokenEndpoint),
     },
     roles: rolePolicy(env.UI_ROLE_GROUPS),
@@ -141,6 +145,7 @@ export function publicAuthPolicy(policy: AuthPolicy) {
       client_id: policy.oidc.clientId,
       authorization_endpoint_configured: Boolean(policy.oidc.authorizationEndpoint),
       token_endpoint_configured: Boolean(policy.oidc.tokenEndpoint),
+      userinfo_endpoint_configured: Boolean(policy.oidc.userinfoEndpoint),
       configured: policy.oidc.configured,
     },
     roles: policy.roles,

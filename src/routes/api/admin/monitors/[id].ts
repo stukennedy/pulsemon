@@ -33,7 +33,7 @@ function monitorPatch(raw: any) {
 }
 
 export const onRequestPatch = async (c: Context<{ Bindings: Env }>) => {
-  const principal = requireAdminUi(c);
+  const principal = await requireAdminUi(c);
   if (principal instanceof Response) return principal;
 
   const result = await Effect.runPromise(Effect.either(
@@ -54,7 +54,7 @@ export const onRequestPatch = async (c: Context<{ Bindings: Env }>) => {
 };
 
 export const onRequestDelete = async (c: Context<{ Bindings: Env }>) => {
-  const principal = requireAdminUi(c);
+  const principal = await requireAdminUi(c);
   if (principal instanceof Response) return principal;
 
   const result = await Effect.runPromise(Effect.either(

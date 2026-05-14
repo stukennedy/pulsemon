@@ -1,5 +1,10 @@
 import type { Context } from "hono";
 import type { Env } from "@/types";
+import {
+  isOidcAuthConfigured,
+  oidcUnauthorizedResponse,
+  principalFromOidcSession,
+} from "./oidc";
 
 export interface UiPrincipal {
   readonly username: string;
@@ -25,7 +30,7 @@ export function checkApiKey(c: Context<{ Bindings: Env }>): Response | null {
 }
 
 function isUiAuthConfigured(c: Context<{ Bindings: Env }>) {
-  return Boolean(c.env.UI_USERS || c.env.UI_BASIC_AUTH);
+  return Boolean(c.env.UI_USERS || c.env.UI_BASIC_AUTH || isOidcAuthConfigured(c.env));
 }
 
 function basicCredentials(c: Context<{ Bindings: Env }>): { username: string; password: string } | null {
@@ -97,25 +102,23 @@ function principalFromLegacyBasicAuth(
     : null;
 }
 
-export function uiPrincipalFromRequest(c: Context<{ Bindings: Env }>): UiPrincipal | null {
+export async function uiPrincipalFromRequest(c: Context<{ Bindings: Env }>): Promise<UiPrincipal | null> {
+  const oidcPrincipal = await principalFromOidcSession(c);
+  if (oidcPrincipal) return oidcPrincipal;
+
   const credentials = basicCredentials(c);
   return principalFromUiUsers(c.env.UI_USERS, credentials)
     ?? principalFromLegacyBasicAuth(c.env.UI_BASIC_AUTH, credentials);
 }
 
-export function requireAdminUi(c: Context<{ Bindings: Env }>): UiPrincipal | Response {
+export async function requireAdminUi(c: Context<{ Bindings: Env }>): Promise<UiPrincipal | Response> {
   if (!isUiAuthConfigured(c)) {
     return c.json({ error: "Admin UI auth not configured" }, 503);
   }
 
-  const principal = uiPrincipalFromRequest(c);
+  const principal = await uiPrincipalFromRequest(c);
   if (!principal) {
-    return new Response("Unauthorized", {
-      status: 401,
-      headers: {
-        "WWW-Authenticate": 'Basic realm="pulsemon"',
-      },
-    });
+    return oidcUnauthorizedResponse(c);
   }
 
   if (principal.role !== "admin") {
@@ -125,19 +128,15 @@ export function requireAdminUi(c: Context<{ Bindings: Env }>): UiPrincipal | Res
   return principal;
 }
 
-export function checkUiAuth(c: Context<{ Bindings: Env }>): Response | null {
+export async function checkUiAuth(c: Context<{ Bindings: Env }>): Promise<Response | null> {
   if (!isUiAuthConfigured(c)) return null;
 
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/api/ingest")) return null;
   if (path === "/api/admin/maintenance") return null;
+  if (path.startsWith("/auth/")) return null;
 
-  if (uiPrincipalFromRequest(c)) return null;
+  if (await uiPrincipalFromRequest(c)) return null;
 
-  return new Response("Unauthorized", {
-    status: 401,
-    headers: {
-      "WWW-Authenticate": 'Basic realm="pulsemon"',
-    },
-  });
+  return oidcUnauthorizedResponse(c);
 }

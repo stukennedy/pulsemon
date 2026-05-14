@@ -117,10 +117,8 @@ wrangler secret put UI_ROLE_GROUPS
 }
 ```
 
-OIDC/SSO policy groundwork is available through `UI_ROLE_GROUPS` and the OIDC
-metadata env vars. This maps verified OIDC claims to Pulsemon roles; the current
-login flow still uses Basic auth until a full OIDC callback/session flow is
-enabled:
+OIDC/SSO login is available through signed Worker cookies and
+`UI_ROLE_GROUPS`. Pulsemon maps OIDC claims to `admin` or `viewer` roles:
 
 ```json
 {
@@ -129,9 +127,16 @@ enabled:
 }
 ```
 
-Set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_AUTHORIZATION_ENDPOINT`, and
-`OIDC_TOKEN_ENDPOINT` to expose sanitized policy metadata at
-`/api/admin/auth/policy`.
+Set `UI_SESSION_SECRET`, `OIDC_ISSUER`, `OIDC_CLIENT_ID`,
+`OIDC_CLIENT_SECRET`, `OIDC_AUTHORIZATION_ENDPOINT`, and `OIDC_TOKEN_ENDPOINT`
+to enable `/auth/login`, `/auth/callback`, and signed UI sessions.
+`OIDC_USERINFO_ENDPOINT`, `OIDC_REDIRECT_URI`, `OIDC_SCOPES`, and
+`UI_SESSION_TTL_SECONDS` are optional. Basic auth remains available as a local
+fallback through `UI_USERS` or `UI_BASIC_AUTH`.
+
+OIDC callback handling validates `iss`, `aud`, `exp`, and `nonce`, then audits
+successful, denied, and failed auth attempts. Sanitized auth policy metadata is
+available at `/api/admin/auth/policy`.
 
 `INGEST_MAX_BYTES` defaults to `1000000` bytes and rejects oversized ingest
 payloads before decoding JSON.
@@ -515,6 +520,9 @@ await batch.flush();
 | `POST` | `/api/admin/monitors` | Create a custom monitor definition |
 | `PATCH` | `/api/admin/monitors/:id` | Update a monitor definition |
 | `DELETE` | `/api/admin/monitors/:id` | Delete a monitor definition |
+| `GET` | `/auth/login` | Start OIDC authorization-code login |
+| `GET` | `/auth/callback` | Complete OIDC login and set the UI session |
+| `POST` | `/auth/logout` | Clear the signed UI session |
 
 `connections` and `spans` inserts are idempotent by `id`: duplicate IDs are
 ignored. Use the `PATCH` endpoints when a connection or span changes state after

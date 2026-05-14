@@ -28,7 +28,7 @@ export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
 };
 
 export const onRequestPost = async (c: Context<{ Bindings: Env }>) => {
-  const principal = requireAdminUi(c);
+  const principal = await requireAdminUi(c);
   if (principal instanceof Response) return principal;
 
   const form = await c.req.formData();

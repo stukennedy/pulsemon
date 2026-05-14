@@ -13,6 +13,8 @@ Required secrets:
 
 - `INGEST_API_KEYS` for scoped app/collector tokens.
 - `UI_USERS` for admin/viewer access.
+- `UI_SESSION_SECRET`, `UI_ROLE_GROUPS`, and OIDC client settings when SSO is
+  enabled.
 - `MAINTENANCE_API_KEY` for scheduled/manual maintenance automation.
 - `ALERT_WEBHOOK_URL` and `ALERT_WEBHOOK_SECRET` when alert delivery is enabled.
 
@@ -165,8 +167,6 @@ the configured endpoint.
 These are not blockers for a controlled platform-team rollout, but they remain
 before calling Pulsemon a broad Datadog replacement:
 
-- Full OIDC login/callback/session flow beyond the current policy-mapping
-  groundwork.
 - Multi-region disaster recovery automation beyond D1 export, Time Travel, and
   restore validation drills.
 - Live certification rows for the exact OpenTelemetry SDK and Collector

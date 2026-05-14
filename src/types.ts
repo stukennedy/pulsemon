@@ -57,8 +57,14 @@ export interface Env {
   UI_BASIC_AUTH?: string;
   UI_USERS?: string;
   UI_ROLE_GROUPS?: string;
+  UI_SESSION_SECRET?: string;
+  UI_SESSION_TTL_SECONDS?: string;
   OIDC_ISSUER?: string;
   OIDC_CLIENT_ID?: string;
+  OIDC_CLIENT_SECRET?: string;
   OIDC_AUTHORIZATION_ENDPOINT?: string;
   OIDC_TOKEN_ENDPOINT?: string;
+  OIDC_USERINFO_ENDPOINT?: string;
+  OIDC_REDIRECT_URI?: string;
+  OIDC_SCOPES?: string;
 }

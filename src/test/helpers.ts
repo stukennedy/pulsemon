@@ -121,7 +121,7 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
   });
 
   app.use("*", async (c, next) => {
-    const authResponse = checkUiAuth(c);
+    const authResponse = await checkUiAuth(c);
     if (authResponse) return authResponse;
     await next();
   });

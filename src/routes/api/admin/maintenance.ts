@@ -17,14 +17,14 @@ function bearerToken(c: Context<{ Bindings: Env }>) {
   return auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
 }
 
-function maintenanceAuth(c: Context<{ Bindings: Env }>): MaintenanceAuthResult {
+async function maintenanceAuth(c: Context<{ Bindings: Env }>): Promise<MaintenanceAuthResult> {
   const expected = c.env.MAINTENANCE_API_KEY;
   const token = bearerToken(c);
   if (expected && token === expected) {
     return { ok: true, actor: "maintenance-token", role: "system" };
   }
 
-  const principal = uiPrincipalFromRequest(c);
+  const principal = await uiPrincipalFromRequest(c);
   if (principal?.role === "admin") {
     return { ok: true, actor: principal.username, role: principal.role };
   }
@@ -85,7 +85,7 @@ function auditMaintenance(
 }
 
 export const onRequestPost = async (c: Context<{ Bindings: Env }>) => {
-  const auth = maintenanceAuth(c);
+  const auth = await maintenanceAuth(c);
   if (!auth.ok) {
     await Effect.runPromise(auditMaintenance(c, auth.actor, auth.role, auth.outcome));
     return auth.response;
