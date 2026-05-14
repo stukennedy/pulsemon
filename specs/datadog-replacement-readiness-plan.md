@@ -128,3 +128,6 @@ Control risk in high-volume, multi-team telemetry.
 - 2026-05-14: hardened OTLP transport handling by supporting gzip-compressed
   JSON bodies, validating content type/encoding, and returning explicit 415
   responses for protobuf payloads until a protobuf decoder is added.
+- 2026-05-14: added baseline operations hardening with GitHub Actions CI for
+  typecheck/tests/build and a configurable `bun run load:ingest` script for
+  batch ingest load testing.

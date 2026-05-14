@@ -443,9 +443,20 @@ it was first created.
 ```bash
 bun install
 bun test           # Run tests
+bun run typecheck  # TypeScript checks
+bun run build      # Production build
 bun run dev        # Dev server on :8788
 bun run routes     # Regenerate router after adding routes
+bun run load:ingest # Configurable ingest load test
 ```
+
+`load:ingest` requires `PULSEMON_KEY` and defaults to
+`PULSEMON_URL=http://localhost:8788`. Tune it with
+`PULSEMON_LOAD_REQUESTS`, `PULSEMON_LOAD_BATCH_SIZE`, and
+`PULSEMON_LOAD_CONCURRENCY`.
+
+CI runs on pushes and pull requests with `bun install --frozen-lockfile`,
+`bun run typecheck`, `bun test`, and `bun run build`.
 
 ## Seed Data
 

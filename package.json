@@ -12,7 +12,8 @@
     "typecheck": "tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply pulsemon-db",
-    "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql"
+    "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql",
+    "load:ingest": "bun scripts/load-ingest.ts"
   },
   "dependencies": {
     "drizzle-kit": "^0.31.9",
