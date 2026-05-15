@@ -49,14 +49,14 @@ repo-owned deliverables.
 
 ## Migration Discipline
 
-The repo currently applies ordered SQL files with `bun run db:migrate`, which
-wraps `wrangler d1 migrations apply pulsemon-db`. `bun run db:generate` exists,
-but this repository does not yet have Drizzle migration metadata snapshots for
-the existing hand-written migration history. A test run on 2026-05-14 generated
-a duplicate full-schema baseline migration, so Drizzle diff generation must not
-be used for incremental migrations until a dedicated baseline conversion is
-done. New schema work should update `src/db/schema.ts`, add the corresponding
-ordered D1 SQL migration, and run the full test suite.
+The migration history was reset before production use. Drizzle now owns schema
+diff generation, with `migrations/0000_busy_quicksilver.sql` as the generated
+initial schema and `migrations/meta` as the baseline.
+
+New schema work should update `src/db/schema.ts`, run `bun run db:generate`,
+inspect the generated SQL, and run the full verification suite. Hand-written
+migrations should be reserved for D1 SQL that Drizzle cannot express, and the
+reason should be documented in the migration.
 
 ## Progress Log
 

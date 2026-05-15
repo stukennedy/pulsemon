@@ -204,8 +204,8 @@ export function governValue(value: unknown, config: IngestGovernanceConfig): unk
   return governValueInternal(value, config, 0);
 }
 
-export function governText(value: string | undefined, config: IngestGovernanceConfig): string | undefined {
-  return value === undefined ? undefined : redactText(value, config);
+export function governText(value: string | null | undefined, config: IngestGovernanceConfig): string | null | undefined {
+  return value === undefined || value === null ? value : redactText(value, config);
 }
 
 export function governConnectionInsert(

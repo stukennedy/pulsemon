@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import type { Span } from "@/types";
+import type { Span } from "@/db/schema";
 import { durationColor, formatDuration } from "./StatusBadge";
 
 interface PipelineStage {

@@ -1,65 +1,82 @@
 import { Effect } from "effect";
 import type { TenantScope } from "@/types";
-import { DatabaseError } from "./errors";
 import type {
-  PatchConnectionInput,
-  PatchSpanInput,
-  PostAgentToolCallInput,
-  PostConnectionInput,
-  PostEventInput,
-  PostLogInput,
-  PostMetricInput,
-  PostSpanInput,
-  PostVoiceTurnInput,
-} from "./schemas";
+  AgentToolCallInsert as SchemaAgentToolCallInsert,
+  Connection,
+  ConnectionInsert as SchemaConnectionInsert,
+  EventInsert as SchemaEventInsert,
+  LogInsert as SchemaLogInsert,
+  MetricInsert as SchemaMetricInsert,
+  Span,
+  SpanInsert as SchemaSpanInsert,
+  VoiceTurnInsert as SchemaVoiceTurnInsert,
+} from "@/db/schema";
+import { DatabaseError } from "./errors";
 
-export type ConnectionInsert = TenantScope & Omit<PostConnectionInput, "id" | "started_at" | "status"> & {
-  readonly id: string;
-  readonly started_at: string;
-  readonly status: string;
+type RequireColumns<T, K extends keyof T> = Omit<T, K> & {
+  readonly [P in K]-?: Exclude<T[P], undefined>;
 };
 
-export type SpanInsert = TenantScope & Omit<PostSpanInput, "id" | "started_at" | "status"> & {
-  readonly id: string;
-  readonly started_at: string;
-  readonly status: string;
+type RawJsonColumns<T, K extends keyof T> = Omit<T, K> & {
+  readonly [P in K]?: unknown;
 };
 
-export type EventInsert = TenantScope & Omit<PostEventInput, "id" | "timestamp"> & {
-  readonly id: string;
-  readonly timestamp: string;
+type BooleanColumns<T, K extends keyof T> = Omit<T, K> & {
+  readonly [P in K]-?: boolean;
 };
 
-export type MetricInsert = TenantScope & Omit<PostMetricInput, "id" | "timestamp"> & {
-  readonly id: string;
-  readonly timestamp: string;
-};
+export type ConnectionInsert = RawJsonColumns<
+  RequireColumns<SchemaConnectionInsert, "id" | "workspace_id" | "project_id" | "started_at" | "status">,
+  "metadata"
+>;
 
-export type LogInsert = TenantScope & Omit<PostLogInput, "id" | "timestamp"> & {
-  readonly id: string;
-  readonly timestamp: string;
-};
+export type SpanInsert = RawJsonColumns<
+  RequireColumns<SchemaSpanInsert, "id" | "workspace_id" | "project_id" | "started_at" | "status">,
+  "attributes"
+>;
 
-export type VoiceTurnInsert = TenantScope & Omit<PostVoiceTurnInput, "id" | "started_at" | "interruption"> & {
-  readonly id: string;
-  readonly started_at: string;
-  readonly interruption: boolean;
-};
+export type EventInsert = RawJsonColumns<
+  RequireColumns<SchemaEventInsert, "id" | "workspace_id" | "project_id" | "timestamp">,
+  "data"
+>;
 
-export type AgentToolCallInsert = TenantScope & Omit<PostAgentToolCallInput, "id" | "started_at" | "status" | "retry_count"> & {
-  readonly id: string;
-  readonly started_at: string;
-  readonly status: string;
-  readonly retry_count: number;
-};
+export type MetricInsert = RawJsonColumns<
+  RequireColumns<SchemaMetricInsert, "id" | "workspace_id" | "project_id" | "timestamp">,
+  "buckets" | "quantiles" | "tags"
+>;
 
-export type ConnectionUpdate = TenantScope & PatchConnectionInput & {
-  readonly id: string;
-};
+export type LogInsert = RawJsonColumns<
+  RequireColumns<SchemaLogInsert, "id" | "workspace_id" | "project_id" | "timestamp">,
+  "attributes"
+>;
 
-export type SpanUpdate = TenantScope & PatchSpanInput & {
-  readonly id: string;
-};
+export type VoiceTurnInsert = RawJsonColumns<
+  BooleanColumns<
+    RequireColumns<SchemaVoiceTurnInsert, "id" | "workspace_id" | "project_id" | "started_at">,
+    "interruption"
+  >,
+  "metadata"
+>;
+
+export type AgentToolCallInsert = RawJsonColumns<
+  RequireColumns<
+    SchemaAgentToolCallInsert,
+    "id" | "workspace_id" | "project_id" | "started_at" | "status" | "retry_count"
+  >,
+  "input" | "output" | "metadata"
+>;
+
+export type ConnectionUpdate = Pick<Connection, "id" | "workspace_id" | "project_id"> &
+  RawJsonColumns<
+    Partial<Pick<Connection, "ended_at" | "duration_ms" | "close_reason" | "status" | "metadata">>,
+    "metadata"
+  >;
+
+export type SpanUpdate = Pick<Span, "id" | "workspace_id" | "project_id"> &
+  RawJsonColumns<
+    Partial<Pick<Span, "ended_at" | "duration_ms" | "status" | "status_message" | "attributes">>,
+    "attributes"
+  >;
 
 export interface TelemetryBatchWrite {
   readonly connections: readonly ConnectionInsert[];
@@ -75,9 +92,9 @@ export interface TelemetryBatchWrite {
 
 export interface TelemetryRepository {
   readonly insertConnection: (input: ConnectionInsert) => Effect.Effect<void, DatabaseError>;
-  readonly updateConnection: (id: string, input: PatchConnectionInput & TenantScope) => Effect.Effect<void, DatabaseError>;
+  readonly updateConnection: (id: string, input: ConnectionUpdate) => Effect.Effect<void, DatabaseError>;
   readonly insertSpan: (input: SpanInsert) => Effect.Effect<void, DatabaseError>;
-  readonly updateSpan: (id: string, input: PatchSpanInput & TenantScope) => Effect.Effect<void, DatabaseError>;
+  readonly updateSpan: (id: string, input: SpanUpdate) => Effect.Effect<void, DatabaseError>;
   readonly insertEvents: (input: readonly EventInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly insertMetrics: (input: readonly MetricInsert[]) => Effect.Effect<void, DatabaseError>;
   readonly insertLogs: (input: readonly LogInsert[]) => Effect.Effect<void, DatabaseError>;
@@ -129,7 +146,7 @@ function bindConnectionInsert(db: D1Database, input: ConnectionInsert) {
   );
 }
 
-function bindConnectionUpdate(db: D1Database, id: string, input: PatchConnectionInput & TenantScope) {
+function bindConnectionUpdate(db: D1Database, id: string, input: ConnectionUpdate) {
   const fields: string[] = [];
   const values: unknown[] = [];
   if (input.ended_at !== undefined) { fields.push("ended_at = ?"); values.push(input.ended_at); }
@@ -167,7 +184,7 @@ function bindSpanInsert(db: D1Database, input: SpanInsert) {
   );
 }
 
-function bindSpanUpdate(db: D1Database, id: string, input: PatchSpanInput & TenantScope) {
+function bindSpanUpdate(db: D1Database, id: string, input: SpanUpdate) {
   const fields: string[] = [];
   const values: unknown[] = [];
   if (input.ended_at !== undefined) { fields.push("ended_at = ?"); values.push(input.ended_at); }

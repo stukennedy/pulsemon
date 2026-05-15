@@ -1,17 +1,3 @@
-export type {
-  AgentToolCall,
-  AuditEvent,
-  Connection,
-  Event,
-  LogRecord,
-  Metric,
-  MonitorDefinitionRecord,
-  SloDefinitionRecord,
-  SloEvaluationRecord,
-  Span,
-  VoiceTurn,
-} from "@/db/schema";
-
 export interface Facet {
   name: string;
   field: string;

@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import type { AgentToolCall, Event, LogRecord, Span, VoiceTurn } from "@/types";
+import type { AgentToolCall, Event, LogRecord, Span, VoiceTurn } from "@/db/schema";
 import type { RealtimeSessionDetail, VoiceSessionSummary } from "@/lib/effect/sessions";
 import { voiceSessionStatus } from "@/lib/effect/sessions";
 import { durationColor, formatDuration, statusColor } from "./StatusBadge";

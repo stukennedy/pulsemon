@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import type { Connection } from "@/types";
+import type { Connection } from "@/db/schema";
 import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "./StatusBadge";
 
 export const ConnectionTable: FC<{ connections: Connection[]; total: number }> = ({ connections, total }) => (

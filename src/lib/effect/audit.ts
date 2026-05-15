@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import type { AuditEvent, TenantScope } from "@/types";
+import type { AuditEvent } from "@/db/schema";
+import type { TenantScope } from "@/types";
 import { DatabaseError, ValidationError } from "./errors";
 
 export interface AuditEventInput {

@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import type { Connection, Event, Span } from "@/types";
+import type { Connection, Event, Span } from "@/db/schema";
 import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "./StatusBadge";
 
 const EVENT_ICONS: Record<string, string> = {

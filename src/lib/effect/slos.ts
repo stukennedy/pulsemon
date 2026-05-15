@@ -1,21 +1,11 @@
 import { Effect } from "effect";
-import type { SloDefinitionRecord, SloEvaluationRecord, TenantScope } from "@/types";
+import type { SloDefinitionRecord, SloEvaluationRecord } from "@/db/schema";
+import type { TenantScope } from "@/types";
 import { DatabaseError, ValidationError } from "./errors";
 
-export interface SloDefinition {
-  readonly id: string;
-  readonly workspace_id: string;
-  readonly project_id: string;
-  readonly name: string;
-  readonly metric_name: string;
-  readonly service: string | null;
-  readonly objective_percent: number;
-  readonly threshold: number;
-  readonly window_minutes: number;
+export type SloDefinition = Omit<SloDefinitionRecord, "enabled"> & {
   readonly enabled: boolean;
-  readonly created_at: string;
-  readonly updated_at: string;
-}
+};
 
 export interface SloDefinitionInput {
   readonly id?: string;
@@ -28,20 +18,7 @@ export interface SloDefinitionInput {
   readonly enabled?: boolean;
 }
 
-export interface SloEvaluation {
-  readonly id: string;
-  readonly workspace_id: string;
-  readonly project_id: string;
-  readonly slo_id: string;
-  readonly name: string;
-  readonly objective_percent: number;
-  readonly attainment_percent: number | null;
-  readonly error_budget_remaining_percent: number | null;
-  readonly good_events: number;
-  readonly total_events: number;
-  readonly window_minutes: number;
-  readonly evaluated_at: string;
-}
+export type SloEvaluation = SloEvaluationRecord;
 
 export interface SloSummary {
   readonly definitions: readonly SloDefinition[];

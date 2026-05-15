@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import type { LogRecord } from "@/types";
+import type { LogRecord } from "@/db/schema";
 
 const LEVEL_COLORS: Record<string, string> = {
   trace: "#64748b",

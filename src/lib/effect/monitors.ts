@@ -1,5 +1,6 @@
 import { Effect } from "effect";
-import type { MonitorDefinitionRecord, TenantScope } from "@/types";
+import type { MonitorDefinitionRecord, MonitorEvaluationRecord } from "@/db/schema";
+import type { TenantScope } from "@/types";
 import { DatabaseError, NotFoundError, ValidationError } from "./errors";
 
 export type MonitorStatus = "ok" | "warn" | "alert" | "no_data";
@@ -13,21 +14,10 @@ export type MonitorKind =
   | "connection_error_rate_pct"
   | "metric_avg";
 
-export interface MonitorDefinition {
-  readonly id: string;
-  readonly workspace_id: string;
-  readonly project_id: string;
-  readonly name: string;
+export type MonitorDefinition = Omit<MonitorDefinitionRecord, "kind" | "enabled"> & {
   readonly kind: MonitorKind;
-  readonly metric_name: string | null;
-  readonly service: string | null;
-  readonly threshold: number;
-  readonly window_minutes: number;
-  readonly description: string;
   readonly enabled: boolean;
-  readonly created_at: string;
-  readonly updated_at: string;
-}
+};
 
 export interface MonitorDefinitionInput {
   readonly id?: string;
@@ -52,16 +42,9 @@ export interface MonitorDefinitionPatch {
   readonly enabled?: boolean;
 }
 
-export interface MonitorEvaluation {
-  readonly monitor_id: string;
-  readonly name: string;
+export type MonitorEvaluation = Omit<MonitorEvaluationRecord, "id" | "workspace_id" | "project_id" | "status"> & {
   readonly status: MonitorStatus;
-  readonly value: number | null;
-  readonly threshold: number;
-  readonly window_minutes: number;
-  readonly description: string;
-  readonly evaluated_at: string;
-}
+};
 
 const MONITOR_KINDS: readonly MonitorKind[] = [
   "voice_asr_p95_latency_ms",

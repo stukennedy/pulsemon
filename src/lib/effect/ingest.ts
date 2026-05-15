@@ -450,8 +450,8 @@ export function patchConnection(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PatchConnectionInputSchema, raw);
     yield* ensureConnectionUpdate(input);
-    const update = governConnectionUpdate({ ...auth, ...input }, governanceConfig(deps));
-    yield* enforceCardinality(deps, auth, { ...emptyBatch(), connectionUpdates: [{ ...update, id }] });
+    const update = governConnectionUpdate({ ...auth, ...input, id }, governanceConfig(deps));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), connectionUpdates: [update] });
     yield* deps.repository.updateConnection(id, update);
     return { id };
   });
@@ -482,8 +482,8 @@ export function patchSpan(
     yield* preparePressure(deps, auth);
     const input = yield* decode(PatchSpanInputSchema, raw);
     yield* ensureSpanUpdate(input);
-    const update = governSpanUpdate({ ...auth, ...input }, governanceConfig(deps));
-    yield* enforceCardinality(deps, auth, { ...emptyBatch(), spanUpdates: [{ ...update, id }] });
+    const update = governSpanUpdate({ ...auth, ...input, id }, governanceConfig(deps));
+    yield* enforceCardinality(deps, auth, { ...emptyBatch(), spanUpdates: [update] });
     yield* deps.repository.updateSpan(id, update);
     return { id };
   });

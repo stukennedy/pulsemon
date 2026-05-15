@@ -10,6 +10,7 @@
     "deploy": "vite build && wrangler deploy",
     "test": "bun test",
     "typecheck": "tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "check": "bun run typecheck && bun test && bun run build && bun run restore:check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply pulsemon-db",
     "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql",

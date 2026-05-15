@@ -599,6 +599,11 @@ Generates 50 voice AI sessions with realistic data:
 ## Migrations
 
 ```bash
-bun run db:generate   # Generate from schema changes
-bun run db:migrate    # Apply to D1
+bun run db:generate    # Generate SQL from src/db/schema.ts changes
+bun run restore:check  # Validate generated migrations locally
+bun run db:migrate     # Apply to D1
 ```
+
+Drizzle owns migration generation. The current migration history starts from a
+generated initial schema because no production database needed the old
+hand-written chain.
