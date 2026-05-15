@@ -89,6 +89,9 @@ Prepare for real deployments.
 - Backup/restore and D1 capacity guidance.
 - Load and capacity-gate scripts for ingest pressure, readback, and threshold
   decisions.
+- Cloudflare ingest scale plan for Queue-backed ingestion, raw telemetry storage
+  separation, D1 control-plane use, and Durable Object/UI read hardening. See
+  `specs/cloudflare-ingest-scale-plan.md`.
 - Synthetic smoke checks for ingest, query, UI auth, and scheduled maintenance.
 
 ### 7. Governance And Safety
