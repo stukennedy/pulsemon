@@ -109,6 +109,41 @@ describe("Page routes", () => {
     expect(html).toContain("asr.transcribe");
   });
 
+  it("GET /ws keys the search Durable Object by browser session id", async () => {
+    const names: string[] = [];
+    const forwardedUrls: string[] = [];
+
+    ctx = createTestContext({
+      env: {
+        SEARCH_SESSION: {
+          idFromName: (name: string) => {
+            names.push(name);
+            return { name };
+          },
+          get: () => ({
+            fetch: (request: Request) => {
+              forwardedUrls.push(request.url);
+              return new Response("ws mock", { status: 101 });
+            },
+          }),
+        } as any,
+      },
+    });
+
+    const res = await ctx.request("/ws?view=logs&sid=browser_session_12345", {
+      headers: {
+        Upgrade: "websocket",
+        "CF-Connecting-IP": "198.51.100.44",
+      },
+    });
+
+    expect(res.status).toBe(101);
+    expect(names).toEqual(["default:default:search:browser_session_12345"]);
+    expect(names[0]).not.toContain("198.51.100.44");
+    expect(names[0]).not.toContain(":logs");
+    expect(new URL(forwardedUrls[0]).searchParams.get("view")).toBe("logs");
+  });
+
   it("GET / with seed data shows dashboard stats", async () => {
     ctx.seedConnection({ service: "voice-gateway", status: "active" });
     ctx.seedConnection({ service: "asr-service", status: "closed" });
