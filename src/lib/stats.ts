@@ -1,7 +1,7 @@
 import { drizzle } from "drizzle-orm/d1";
 import { count, sql, and, eq } from "drizzle-orm";
 import type { AnyColumn } from "drizzle-orm/column";
-import { connections, spans, events, metrics } from "@/db/schema";
+import { connections, events, metrics } from "@/db/schema";
 import { buildConnectionConditions } from "./facets";
 import type { ActiveTag, TenantScope } from "@/types";
 import { DEFAULT_TENANT_SCOPE } from "./tenant";
@@ -32,6 +32,13 @@ export interface ConnectionStats {
   connectionsByDay: { day: string; count: number }[];
 }
 
+interface LatencyPercentileRow {
+  category: string;
+  p50: number | null;
+  p95: number | null;
+  p99: number | null;
+}
+
 type TenantColumns = {
   workspace_id: AnyColumn;
   project_id: AnyColumn;
@@ -55,15 +62,41 @@ export async function queryDashboardStats(
   const db = drizzle(d1);
   const recentCutoff = daysAgoIso(14);
   const connectionWhere = and(...tenantConditions(connections, tenant));
-  const spanWhere = and(
-    ...tenantConditions(spans, tenant),
-    sql`${spans.duration_ms} IS NOT NULL`
-  );
   const eventWhere = and(...tenantConditions(events, tenant));
   const recentWhere = and(
     ...tenantConditions(connections, tenant),
     sql`${connections.started_at} > ${recentCutoff}`
   );
+
+  const latencyPercentiles = d1.prepare(
+    `WITH span_latency AS (
+       SELECT
+         CASE
+           WHEN instr(operation, '.') > 0 THEN substr(operation, 1, instr(operation, '.') - 1)
+           ELSE operation
+         END AS category,
+         duration_ms
+       FROM spans
+       WHERE workspace_id = ?
+         AND project_id = ?
+         AND duration_ms IS NOT NULL
+     ),
+     ranked AS (
+       SELECT
+         category,
+         duration_ms,
+         ROW_NUMBER() OVER (PARTITION BY category ORDER BY duration_ms ASC) AS rn,
+         COUNT(*) OVER (PARTITION BY category) AS total
+       FROM span_latency
+     )
+     SELECT
+       category,
+       MIN(CASE WHEN rn >= CAST(((total * 50) + 99) / 100 AS INTEGER) THEN duration_ms END) AS p50,
+       MIN(CASE WHEN rn >= CAST(((total * 95) + 99) / 100 AS INTEGER) THEN duration_ms END) AS p95,
+       MIN(CASE WHEN rn >= CAST(((total * 99) + 99) / 100 AS INTEGER) THEN duration_ms END) AS p99
+     FROM ranked
+     GROUP BY category`
+  ).bind(tenant.workspace_id, tenant.project_id).all<LatencyPercentileRow>();
 
   const [[connSummary], serviceRows, typeRows, volumeByDay, latencyRows, [eventCount]] = await Promise.all([
     db.select({
@@ -92,34 +125,18 @@ export async function queryDashboardStats(
       .groupBy(sql`strftime('%Y-%m-%d', started_at)`)
       .orderBy(sql`strftime('%Y-%m-%d', started_at)`),
 
-    // Latency percentiles per operation category
-    db.select({
-      operation: spans.operation,
-      duration: spans.duration_ms,
-    }).from(spans)
-      .where(spanWhere)
-      .orderBy(spans.operation, spans.duration_ms),
+    latencyPercentiles,
 
     db.select({ count: count() }).from(events).where(eventWhere),
   ]);
 
-  // Calculate percentiles from latency rows
-  const byOp = new Map<string, number[]>();
-  for (const row of latencyRows) {
-    const cat = row.operation.split(".")[0]; // asr, tts, llm
-    const arr = byOp.get(cat) ?? [];
-    arr.push(row.duration!);
-    byOp.set(cat, arr);
-  }
-
   const p50: Record<string, number> = {};
   const p95: Record<string, number> = {};
   const p99: Record<string, number> = {};
-  for (const [op, durations] of byOp) {
-    durations.sort((a, b) => a - b);
-    p50[op] = durations[Math.floor(durations.length * 0.5)] ?? 0;
-    p95[op] = durations[Math.floor(durations.length * 0.95)] ?? 0;
-    p99[op] = durations[Math.floor(durations.length * 0.99)] ?? 0;
+  for (const row of latencyRows.results) {
+    p50[row.category] = Number(row.p50 ?? 0);
+    p95[row.category] = Number(row.p95 ?? 0);
+    p99[row.category] = Number(row.p99 ?? 0);
   }
 
   const total = connSummary.total || 1;
