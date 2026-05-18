@@ -7,10 +7,14 @@ interface CapacityConfig {
   readonly requests: number;
   readonly batchSize: number;
   readonly concurrency: number;
+  readonly queuedMode: boolean;
   readonly maxFailureRate: number;
   readonly maxP95Ms?: number;
   readonly minRequestsPerSecond?: number;
   readonly readback: boolean;
+  readonly readbackTimeoutMs: number;
+  readonly readbackIntervalMs: number;
+  readonly minReadbackSamples: number;
 }
 
 type BatchResult = Awaited<ReturnType<typeof sendBatch>>;
@@ -45,6 +49,16 @@ function optionalNumberEnv(name: string) {
   return parsed;
 }
 
+function integerEnv(name: string, fallback: number, min: number) {
+  const value = process.env[name];
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < min) {
+    throw new Error(`${name} must be an integer greater than or equal to ${min}`);
+  }
+  return parsed;
+}
+
 function booleanEnv(name: string, fallback: boolean) {
   const value = process.env[name];
   if (!value) return fallback;
@@ -55,6 +69,10 @@ function config(): CapacityConfig {
   const url = process.env.PULSEMON_URL ?? "http://localhost:8788";
   const key = process.env.PULSEMON_KEY;
   if (!key) throw new Error("PULSEMON_KEY is required");
+  const queuedMode = booleanEnv(
+    "PULSEMON_CAPACITY_QUEUED",
+    process.env.PULSEMON_INGEST_MODE === "queued" || process.env.INGEST_MODE === "queued"
+  );
 
   return {
     url: url.endsWith("/") ? url.slice(0, -1) : url,
@@ -65,10 +83,14 @@ function config(): CapacityConfig {
     requests: integerEnvWithFallback("PULSEMON_CAPACITY_REQUESTS", "PULSEMON_LOAD_REQUESTS", 100),
     batchSize: integerEnvWithFallback("PULSEMON_CAPACITY_BATCH_SIZE", "PULSEMON_LOAD_BATCH_SIZE", 25),
     concurrency: integerEnvWithFallback("PULSEMON_CAPACITY_CONCURRENCY", "PULSEMON_LOAD_CONCURRENCY", 5),
+    queuedMode,
     maxFailureRate: numberEnv("PULSEMON_CAPACITY_MAX_FAILURE_RATE", 0),
     maxP95Ms: optionalNumberEnv("PULSEMON_CAPACITY_MAX_P95_MS"),
     minRequestsPerSecond: optionalNumberEnv("PULSEMON_CAPACITY_MIN_RPS"),
     readback: booleanEnv("PULSEMON_CAPACITY_READBACK", true),
+    readbackTimeoutMs: integerEnv("PULSEMON_CAPACITY_READBACK_TIMEOUT_MS", queuedMode ? 60_000 : 0, 0),
+    readbackIntervalMs: integerEnv("PULSEMON_CAPACITY_READBACK_INTERVAL_MS", 2_000, 100),
+    minReadbackSamples: integerEnv("PULSEMON_CAPACITY_MIN_READBACK_SAMPLES", 1, 1),
   };
 }
 
@@ -157,7 +179,11 @@ function readHeaders(cfg: CapacityConfig): HeadersInit {
     : {};
 }
 
-async function readback(cfg: CapacityConfig, from: string, to: string) {
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readbackOnce(cfg: CapacityConfig, from: string, to: string) {
   const response = await fetch(
     `${cfg.url}/api/metrics/timeseries?name=${encodeURIComponent(cfg.metricName)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`,
     { headers: readHeaders(cfg) }
@@ -168,11 +194,33 @@ async function readback(cfg: CapacityConfig, from: string, to: string) {
     : 0;
 
   return {
-    ok: response.ok && sampleCount > 0,
+    ok: response.ok && sampleCount >= cfg.minReadbackSamples,
     status: response.status,
     points: Array.isArray(body?.points) ? body.points.length : 0,
     sampleCount,
+    minReadbackSamples: cfg.minReadbackSamples,
     body: response.ok ? undefined : body,
+  };
+}
+
+async function readback(cfg: CapacityConfig, from: string, to: string) {
+  const start = performance.now();
+  let attempts = 0;
+  let latest = await readbackOnce(cfg, from, to);
+  attempts += 1;
+
+  while (!latest.ok && performance.now() - start < cfg.readbackTimeoutMs) {
+    await sleep(cfg.readbackIntervalMs);
+    latest = await readbackOnce(cfg, from, to);
+    attempts += 1;
+  }
+
+  const waitedMs = Math.round(performance.now() - start);
+  return {
+    ...latest,
+    attempts,
+    waitedMs,
+    timedOut: !latest.ok && waitedMs >= cfg.readbackTimeoutMs,
   };
 }
 
@@ -215,6 +263,7 @@ async function main() {
     batchSize: cfg.batchSize,
     records: cfg.requests * cfg.batchSize * 2,
     concurrency: cfg.concurrency,
+    queuedMode: cfg.queuedMode,
     elapsedMs: Math.round(elapsedMs),
     requestsPerSecond: Number(requestsPerSecond.toFixed(2)),
     p50Ms: Math.round(percentile(durations, 0.5)),
@@ -251,6 +300,9 @@ async function main() {
         maxP95Ms: cfg.maxP95Ms ?? null,
         minRequestsPerSecond: cfg.minRequestsPerSecond ?? null,
         readback: cfg.readback,
+        readbackTimeoutMs: cfg.readbackTimeoutMs,
+        readbackIntervalMs: cfg.readbackIntervalMs,
+        minReadbackSamples: cfg.minReadbackSamples,
       },
     },
   }, null, 2));

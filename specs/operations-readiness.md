@@ -160,6 +160,31 @@ Queued ingest pass criteria:
 - Smoke checks verify eventual readback rather than only immediate HTTP
   acknowledgement.
 
+Queue inspection and replay:
+
+```bash
+PULSEMON_QUEUE_NAME=pulsemon-telemetry \
+PULSEMON_QUEUE_DLQ_NAME=pulsemon-telemetry-dlq \
+bun run queue:ops inspect
+```
+
+For exported JSONL queue messages, validate first:
+
+```bash
+PULSEMON_QUEUE_REPLAY_FILE=dlq-export.jsonl \
+PULSEMON_QUEUE_REPLAY_DRY_RUN=true \
+bun run queue:ops replay
+```
+
+Replay through the maintenance-key protected endpoint:
+
+```bash
+PULSEMON_URL=https://pulsemon.example.com \
+PULSEMON_QUEUE_REPLAY_FILE=dlq-export.jsonl \
+PULSEMON_QUEUE_REPLAY_KEY=<maintenance-key> \
+bun run queue:ops replay
+```
+
 Queued raw telemetry archival:
 
 - Queue consumers write the normalized queue envelope to R2 before D1
@@ -205,12 +230,22 @@ PULSEMON_CAPACITY_MIN_RPS=25 \
 bun run capacity:check
 ```
 
+For queued ingest, gate on eventual readback:
+
+```bash
+PULSEMON_CAPACITY_QUEUED=true \
+PULSEMON_CAPACITY_READBACK_TIMEOUT_MS=60000 \
+PULSEMON_CAPACITY_READBACK_INTERVAL_MS=2000 \
+bun run capacity:check
+```
+
 Capacity gate pass criteria:
 
 - Failure rate is at or below `PULSEMON_CAPACITY_MAX_FAILURE_RATE`.
 - p95 ingest latency is below `PULSEMON_CAPACITY_MAX_P95_MS` when set.
 - Throughput is above `PULSEMON_CAPACITY_MIN_RPS` when set.
-- Metric readback returns samples for the generated capacity run.
+- Metric readback returns at least `PULSEMON_CAPACITY_MIN_READBACK_SAMPLES`
+  samples for the generated capacity run before the readback timeout.
 
 ## OpenTelemetry Collector
 

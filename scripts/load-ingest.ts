@@ -93,6 +93,20 @@ async function worker(cfg: LoadConfig, next: () => number | null, results: Await
   }
 }
 
+function percentile(sorted: readonly number[], fraction: number) {
+  if (sorted.length === 0) return 0;
+  const index = Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1);
+  return sorted[index] ?? 0;
+}
+
+function statusCounts(results: readonly Awaited<ReturnType<typeof sendBatch>>[]) {
+  const counts: Record<string, number> = {};
+  for (const result of results) {
+    counts[String(result.status)] = (counts[String(result.status)] ?? 0) + 1;
+  }
+  return counts;
+}
+
 async function main() {
   const cfg = config();
   let current = 0;
@@ -109,7 +123,6 @@ async function main() {
   const elapsedMs = performance.now() - start;
   const failed = results.filter((result) => !result.ok);
   const durations = results.map((result) => result.durationMs).sort((a, b) => a - b);
-  const p95 = durations[Math.floor(durations.length * 0.95)] ?? 0;
 
   console.log(JSON.stringify({
     url: cfg.url,
@@ -119,8 +132,11 @@ async function main() {
     concurrency: cfg.concurrency,
     elapsedMs: Math.round(elapsedMs),
     requestsPerSecond: Number((cfg.requests / (elapsedMs / 1000)).toFixed(2)),
-    p95Ms: Math.round(p95),
+    p50Ms: Math.round(percentile(durations, 0.5)),
+    p95Ms: Math.round(percentile(durations, 0.95)),
+    p99Ms: Math.round(percentile(durations, 0.99)),
     failures: failed.length,
+    statusCounts: statusCounts(results),
     firstFailure: failed[0] ?? null,
   }, null, 2));
 

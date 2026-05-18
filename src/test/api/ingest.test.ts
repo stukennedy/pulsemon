@@ -553,4 +553,56 @@ describe("POST /api/ingest", () => {
     expect(res.status).toBe(400);
     expect(queue.messages).toHaveLength(0);
   });
+
+  it("replays exported queue messages through the maintenance endpoint", async () => {
+    const queue = createTelemetryQueueHarness();
+    const rawTelemetry = createRawTelemetryBucketHarness();
+    ctx = createTestContext({
+      env: {
+        INGEST_MODE: "queued",
+        MAINTENANCE_API_KEY: "maintenance-key",
+        TELEMETRY_QUEUE: queue.queue,
+        RAW_TELEMETRY: rawTelemetry.bucket,
+      },
+    });
+
+    const queued = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "replayed-log-1",
+        service: "voice-gateway",
+        level: "info",
+        message: "replayed ingest",
+      }),
+    });
+    expect(queued.status).toBe(202);
+    expect(queue.messages).toHaveLength(1);
+
+    const replayed = await ctx.request("/api/admin/queue/replay", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer maintenance-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(queue.messages[0]),
+    });
+
+    expect(replayed.status).toBe(200);
+    const body = await replayed.json() as unknown;
+    expect(body).toMatchObject({
+      replayed: true,
+      counts: { logs: 1 },
+    });
+
+    const row = ctx.sqlite
+      .prepare("SELECT service, level, message FROM logs WHERE id = ?")
+      .get("replayed-log-1") as any;
+    expect(row).toEqual({
+      service: "voice-gateway",
+      level: "info",
+      message: "replayed ingest",
+    });
+    expect(rawTelemetry.objects).toHaveLength(1);
+  });
 });

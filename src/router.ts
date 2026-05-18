@@ -6,6 +6,7 @@ import * as api_admin_auth_policy from './routes/api/admin/auth/policy';
 import * as api_admin_maintenance from './routes/api/admin/maintenance';
 import * as api_admin_monitors from './routes/api/admin/monitors';
 import * as api_admin_monitors_id from './routes/api/admin/monitors/[id]';
+import * as api_admin_queue_replay from './routes/api/admin/queue/replay';
 import * as api_metrics_timeseries from './routes/api/metrics/timeseries';
 import * as api_sessions_id from './routes/api/sessions/[id]';
 import * as api_connections from './routes/api/connections';
@@ -40,6 +41,7 @@ export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.post('/api/admin/monitors', api_admin_monitors.onRequestPost);
 	app.patch('/api/admin/monitors/:id', api_admin_monitors_id.onRequestPatch);
 	app.delete('/api/admin/monitors/:id', api_admin_monitors_id.onRequestDelete);
+	app.post('/api/admin/queue/replay', api_admin_queue_replay.onRequestPost);
 	app.get('/api/metrics/timeseries', api_metrics_timeseries.onRequestGet);
 	app.get('/api/sessions/:id', api_sessions_id.onRequestGet);
 	app.get('/api/connections', api_connections.onRequestGet);

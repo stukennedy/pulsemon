@@ -16,6 +16,7 @@
     "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql",
     "load:ingest": "bun scripts/load-ingest.ts",
     "capacity:check": "bun scripts/capacity-check.ts",
+    "queue:ops": "bun scripts/queue-ops.ts",
     "dr:check": "bun scripts/dr-check.ts",
     "otlp:certify": "bun scripts/otlp-certify.ts",
     "restore:check": "bun scripts/restore-check.ts",

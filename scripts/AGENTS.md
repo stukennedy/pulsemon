@@ -9,6 +9,7 @@ Node/Bun APIs; Worker source paths may not.
 - `smoke.ts`: writes and reads a small deployment smoke payload.
 - `load-ingest.ts`: configurable ingest load test.
 - `capacity-check.ts`: gated ingest/readback capacity check.
+- `queue-ops.ts`: queue/DLQ inspection and JSONL replay helper.
 - `restore-check.ts`: local migration and SQL export validation.
 - `dr-check.ts`: primary/standby readiness check.
 - `otlp-certify.ts`: live OTLP fixture replay with certification metadata.

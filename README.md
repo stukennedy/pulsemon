@@ -539,6 +539,7 @@ await batch.flush();
 | `POST` | `/api/admin/monitors` | Create a custom monitor definition |
 | `PATCH` | `/api/admin/monitors/:id` | Update a monitor definition |
 | `DELETE` | `/api/admin/monitors/:id` | Delete a monitor definition |
+| `POST` | `/api/admin/queue/replay` | Replay an exported telemetry queue envelope with the maintenance token |
 | `GET` | `/auth/login` | Start OIDC authorization-code login |
 | `GET` | `/auth/callback` | Complete OIDC login and set the UI session |
 | `POST` | `/auth/logout` | Clear the signed UI session |
@@ -558,6 +559,7 @@ bun run dev        # Dev server on :8788
 bun run routes     # Regenerate router after adding routes
 bun run load:ingest # Configurable ingest load test
 bun run capacity:check # Gated ingest/readback capacity check
+bun run queue:ops      # Queue/DLQ inspect and JSONL replay helper
 bun run dr:check       # Primary/standby DR readiness check
 bun run otlp:certify   # Replay OTLP fixture suite against a deployment
 bun run restore:check  # Validate migrations or an exported SQL restore
@@ -573,7 +575,18 @@ bun run smoke      # Ingest/query smoke check against a running deployment
 metric readback. Tune it with `PULSEMON_CAPACITY_REQUESTS`,
 `PULSEMON_CAPACITY_BATCH_SIZE`, `PULSEMON_CAPACITY_CONCURRENCY`,
 `PULSEMON_CAPACITY_MAX_FAILURE_RATE`, `PULSEMON_CAPACITY_MAX_P95_MS`, and
-`PULSEMON_CAPACITY_MIN_RPS`.
+`PULSEMON_CAPACITY_MIN_RPS`. For queued deployments set
+`PULSEMON_CAPACITY_QUEUED=true` to poll eventual readback; tune polling with
+`PULSEMON_CAPACITY_READBACK_TIMEOUT_MS`,
+`PULSEMON_CAPACITY_READBACK_INTERVAL_MS`, and
+`PULSEMON_CAPACITY_MIN_READBACK_SAMPLES`.
+
+`queue:ops` runs `wrangler queues list/info` for `PULSEMON_QUEUE_NAME` and
+`PULSEMON_QUEUE_DLQ_NAME`. Use `bun run queue:ops replay` with
+`PULSEMON_QUEUE_REPLAY_FILE=<jsonl>`, `PULSEMON_URL`, and
+`PULSEMON_QUEUE_REPLAY_KEY` or `PULSEMON_MAINTENANCE_KEY` to replay exported
+queue envelopes through `/api/admin/queue/replay`. Set
+`PULSEMON_QUEUE_REPLAY_DRY_RUN=true` to validate a JSONL export without replay.
 
 `restore:check` validates that ordered migrations apply to an empty database.
 Pass an exported SQL file path to also validate import into a fresh local

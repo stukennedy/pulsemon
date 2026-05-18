@@ -177,7 +177,8 @@ Evaluate and choose one or more:
   idempotency keys, and version.
 - [x] Add a queue consumer that enforces per-message write caps below D1 query
   limits.
-- [ ] Add queue backlog/dead-letter monitoring and replay tooling.
+- [x] Add queue inspection and JSONL dead-letter replay tooling.
+- [ ] Add automated queue backlog age metrics to the capacity gate.
 
 ### Phase 3: Raw Store Separation
 
@@ -202,7 +203,8 @@ Evaluate and choose one or more:
 Before calling the system a production Datadog replacement candidate, capture:
 
 - capacity run outputs for representative agentic and realtime voice traffic.
-- queue backlog and consumer latency under burst load.
+- queue status snapshots, replay dry-run validation, and consumer latency under
+  burst load.
 - D1 database size growth per million telemetry records.
 - p95/p99 ingest acknowledgement latency.
 - p95/p99 query latency for dashboard, trace detail, log search, metric series,
