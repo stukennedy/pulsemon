@@ -248,6 +248,30 @@ function emptyBatch(): TelemetryBatchWrite {
   };
 }
 
+export function normalizeOtlpTraceBatch(
+  raw: unknown,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): TelemetryBatchWrite {
+  return { ...emptyBatch(), spans: traceSpans(raw, tenant, governance) };
+}
+
+export function normalizeOtlpMetricBatch(
+  raw: unknown,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): TelemetryBatchWrite {
+  return { ...emptyBatch(), metrics: metricRecords(raw, tenant, governance) };
+}
+
+export function normalizeOtlpLogBatch(
+  raw: unknown,
+  tenant: TenantScope,
+  governance: IngestGovernanceConfig
+): TelemetryBatchWrite {
+  return { ...emptyBatch(), logs: logRecords(raw, tenant, governance) };
+}
+
 function ensureBatchSize(count: number): Effect.Effect<void, ValidationError | PayloadTooLargeError> {
   if (count === 0) {
     return Effect.fail(new ValidationError({ message: "No OTLP records provided" }));
@@ -422,12 +446,11 @@ export function postOtlpTraces(
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
     yield* preparePressure(deps, auth);
-    const spans = traceSpans(raw, auth, governanceConfig(deps));
-    yield* ensureBatchSize(spans.length);
-    const batch = { ...emptyBatch(), spans };
+    const batch = normalizeOtlpTraceBatch(raw, auth, governanceConfig(deps));
+    yield* ensureBatchSize(batch.spans.length);
     yield* enforceCardinality(deps, auth, batch);
     yield* deps.repository.writeBatch(batch);
-    return { counts: { spans: spans.length } };
+    return { counts: { spans: batch.spans.length } };
   });
 }
 
@@ -438,7 +461,7 @@ export function postOtlpMetrics(
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
     const pressure = yield* preparePressure(deps, auth);
-    const metrics = metricRecords(raw, auth, governanceConfig(deps));
+    const { metrics } = normalizeOtlpMetricBatch(raw, auth, governanceConfig(deps));
     yield* ensureBatchSize(metrics.length);
     const sampled = sampleItems(metrics, pressure, (metric) => metric.id);
     if (sampled.kept.length > 0) {
@@ -457,7 +480,7 @@ export function postOtlpLogs(
   return Effect.gen(function* () {
     const auth = yield* authorizeIngest(deps);
     const pressure = yield* preparePressure(deps, auth);
-    const logs = logRecords(raw, auth, governanceConfig(deps));
+    const { logs } = normalizeOtlpLogBatch(raw, auth, governanceConfig(deps));
     yield* ensureBatchSize(logs.length);
     const sampled = sampleItems(logs, pressure, (log) => log.id);
     if (sampled.kept.length > 0) {

@@ -21,6 +21,10 @@ Required secrets:
 Recommended controls:
 
 - `INGEST_MAX_BYTES=1000000`
+- `INGEST_MODE=queued` for production traffic after the queue binding and
+  dead-letter queue exist.
+- `INGEST_QUEUE_MAX_BYTES=100000` unless capacity tests prove a lower bound is
+  needed.
 - `INGEST_RATE_LIMIT_PER_MINUTE` sized per ingest token.
 - `INGEST_SAMPLE_RATE=1` initially, lowered only for high-volume events/logs.
 - `INGEST_CARDINALITY_MAX_VALUES_PER_KEY` enabled after observing normal tag
@@ -122,6 +126,29 @@ DR cutover pass criteria:
 - Primary and standby read APIs return successfully under configured UI auth.
 - The standby deployment has passed `bun run smoke`, `bun run capacity:check`,
   and `bun run restore:check <export.sql>` for the restored export.
+
+## Queued Ingest
+
+Pulsemon supports two ingest modes:
+
+- `direct`: request handlers validate and write to D1 synchronously. Use for
+  local development, tests, and low-volume staging.
+- `queued`: request handlers validate, authorize, govern, sample, and enqueue a
+  normalized telemetry envelope. Successful requests return `202 Accepted`; the
+  queue consumer enforces cardinality and persists to D1.
+
+Production deployments should create both queues named in `wrangler.jsonc`:
+`pulsemon-telemetry` and `pulsemon-telemetry-dlq`. Keep queue consumer batch
+sizes below D1 statement and CPU limits, then raise only with capacity evidence.
+
+Queued ingest pass criteria:
+
+- `TELEMETRY_QUEUE` is bound in every deployed environment that sets
+  `INGEST_MODE=queued`.
+- `pulsemon-telemetry-dlq` exists and is monitored.
+- Queue backlog age and retry/dead-letter counts are part of the capacity gate.
+- Smoke checks verify eventual readback rather than only immediate HTTP
+  acknowledgement.
 
 ## Smoke And Load Checks
 
