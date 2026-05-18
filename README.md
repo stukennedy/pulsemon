@@ -557,6 +557,7 @@ bun run typecheck  # TypeScript checks
 bun run build      # Production build
 bun run dev        # Dev server on :8788
 bun run routes     # Regenerate router after adding routes
+bun run example:logs # Local app that pushes logs/spans/metrics to :8788
 bun run load:ingest # Configurable ingest load test
 bun run capacity:check # Gated ingest/readback capacity check
 bun run queue:ops      # Queue/DLQ inspect and JSONL replay helper
@@ -570,6 +571,10 @@ bun run smoke      # Ingest/query smoke check against a running deployment
 `PULSEMON_URL=http://localhost:8788`. Tune it with
 `PULSEMON_LOAD_REQUESTS`, `PULSEMON_LOAD_BATCH_SIZE`, and
 `PULSEMON_LOAD_CONCURRENCY`.
+
+`example:logs` starts a small local HTTP app on `http://localhost:3001` and
+pushes logs, request spans, and request-duration metrics to Pulsemon. See
+`examples/README.md`.
 
 `capacity:check` requires `PULSEMON_KEY`, sends a gated ingest run, and verifies
 metric readback. Tune it with `PULSEMON_CAPACITY_REQUESTS`,
