@@ -243,30 +243,43 @@ function countExistingValues(
   ).first<number>("count"));
 }
 
-function valueExists(
+function existingValueHashes(
   db: D1Database,
   context: ApiKeyContext,
   scope: string,
-  group: CardinalityGroup,
-  valueHash: string
-) {
-  return dbEffect(() => db.prepare(
-    `SELECT value_hash
-     FROM ingest_cardinality_values
-     WHERE workspace_id = ?
-       AND project_id = ?
-       AND scope = ?
-       AND signal = ?
-       AND attribute_key = ?
-       AND value_hash = ?`
-  ).bind(
-    context.workspace_id,
-    context.project_id,
-    scope,
-    group.signal,
-    group.attributeKey,
-    valueHash
-  ).first<string>("value_hash"));
+  group: CardinalityGroup
+): Effect.Effect<Set<string>, DatabaseError> {
+  return Effect.gen(function* () {
+    const existing = new Set<string>();
+    const chunkSize = 90;
+    for (let index = 0; index < group.valueHashes.length; index += chunkSize) {
+      const chunk = group.valueHashes.slice(index, index + chunkSize);
+      if (chunk.length === 0) continue;
+
+      const placeholders = chunk.map(() => "?").join(", ");
+      const rows = yield* dbEffect(() => db.prepare(
+        `SELECT value_hash
+         FROM ingest_cardinality_values
+         WHERE workspace_id = ?
+           AND project_id = ?
+           AND scope = ?
+           AND signal = ?
+           AND attribute_key = ?
+           AND value_hash IN (${placeholders})`
+      ).bind(
+        context.workspace_id,
+        context.project_id,
+        scope,
+        group.signal,
+        group.attributeKey,
+        ...chunk
+      ).all<{ value_hash: string }>());
+
+      for (const row of rows.results) existing.add(row.value_hash);
+    }
+
+    return existing;
+  });
 }
 
 function upsertValues(
@@ -321,12 +334,8 @@ export function makeIngestCardinalityController(
       const groups = groupValues(values);
       for (const group of groups) {
         const existingCount = yield* countExistingValues(db, context, scope, group);
-        let newCount = 0;
-
-        for (const valueHash of group.valueHashes) {
-          const existing = yield* valueExists(db, context, scope, group, valueHash);
-          if (!existing) newCount += 1;
-        }
+        const existingHashes = yield* existingValueHashes(db, context, scope, group);
+        const newCount = group.valueHashes.length - existingHashes.size;
 
         if ((existingCount ?? 0) + newCount > config.maxValuesPerKey) {
           return yield* Effect.fail(new ValidationError({
