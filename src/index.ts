@@ -8,6 +8,7 @@ import { alertConfigFromEnv, processMonitorAlerts } from "./lib/effect/alerts";
 import { runMaintenanceFromEnv } from "./lib/effect/maintenance";
 import { evaluateAndPersistRealtimeMonitors } from "./lib/effect/monitors";
 import { evaluateAndPersistSlos } from "./lib/effect/slos";
+import { processTelemetryQueueBatch, type TelemetryQueueMessage } from "./lib/effect/telemetry-queue";
 import { tenantScopeFromEnv } from "./lib/tenant";
 
 export { SearchSession } from "./lib/search-session";
@@ -23,9 +24,12 @@ app.use("*", async (c, next) => {
 loadLayouts(app);
 loadRoutes(app);
 
-const handler: ExportedHandler<Env> = {
+const handler: ExportedHandler<Env, TelemetryQueueMessage> = {
   fetch(request, env, ctx) {
     return app.fetch(request, env, ctx);
+  },
+  queue(batch, env) {
+    return processTelemetryQueueBatch(env, batch);
   },
   scheduled(_controller, env, ctx) {
     const tenant = tenantScopeFromEnv(env);

@@ -16,9 +16,14 @@ export interface TenantScope {
 export interface Env {
   DB: D1Database;
   SEARCH_SESSION: DurableObjectNamespace;
+  TELEMETRY_QUEUE?: Queue;
+  INGEST_MODE?: string;
   INGEST_API_KEY?: string;
   INGEST_API_KEYS?: string;
   INGEST_MAX_BYTES?: string;
+  INGEST_QUEUE_MAX_BYTES?: string;
+  INGEST_QUEUE_MAX_OPERATIONS?: string;
+  INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS?: string;
   INGEST_REDACTION_DISABLED?: string;
   INGEST_REDACT_TEXT?: string;
   INGEST_REDACT_KEYS?: string;

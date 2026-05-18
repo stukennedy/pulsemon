@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "bun:test";
-import { createTestContext, type TestContext } from "../helpers";
+import { processTelemetryQueueMessages } from "@/lib/effect/telemetry-queue";
+import { createTelemetryQueueHarness, createTestContext, type TestContext } from "../helpers";
 
 const authHeaders = {
   Authorization: "Bearer test-key",
@@ -400,7 +401,7 @@ describe("POST /api/ingest", () => {
 
   it("reads the direct D1 batch operation limit from env", async () => {
     ctx = createTestContext({
-      env: { INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS: "1" } as any,
+      env: { INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS: "1" },
     });
 
     const res = await ctx.request("/api/ingest/batch", {
@@ -422,5 +423,116 @@ describe("POST /api/ingest", () => {
       .prepare("SELECT COUNT(*) AS count FROM logs WHERE id LIKE 'limited-log-%'")
       .get() as any;
     expect(row.count).toBe(0);
+  });
+
+  it("reads the queued batch operation limit from env", async () => {
+    const queue = createTelemetryQueueHarness();
+    ctx = createTestContext({
+      env: {
+        INGEST_MODE: "queued",
+        INGEST_QUEUE_MAX_OPERATIONS: "1",
+        TELEMETRY_QUEUE: queue.queue,
+      },
+    });
+
+    const res = await ctx.request("/api/ingest/batch", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        logs: [
+          { id: "queued-limited-log-1", service: "voice-gateway", level: "info", message: "first" },
+          { id: "queued-limited-log-2", service: "voice-gateway", level: "info", message: "second" },
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("Max 1 operations per batch");
+    expect(queue.messages).toHaveLength(0);
+  });
+
+  it("queues ingest requests when queued mode is enabled", async () => {
+    const queue = createTelemetryQueueHarness();
+    ctx = createTestContext({
+      env: {
+        INGEST_MODE: "queued",
+        TELEMETRY_QUEUE: queue.queue,
+      },
+    });
+
+    const res = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "queued-log-1",
+        service: "voice-gateway",
+        level: "info",
+        message: "queued ingest",
+      }),
+    });
+
+    expect(res.status).toBe(202);
+    const body = await res.json() as any;
+    expect(body).toMatchObject({
+      accepted: true,
+      mode: "queued",
+      counts: { logs: 1 },
+    });
+    expect(queue.messages).toHaveLength(1);
+
+    const before = ctx.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM logs WHERE id = ?")
+      .get("queued-log-1") as any;
+    expect(before.count).toBe(0);
+
+    await processTelemetryQueueMessages({ DB: ctx.d1 }, queue.messages);
+
+    const after = ctx.sqlite
+      .prepare("SELECT service, level, message FROM logs WHERE id = ?")
+      .get("queued-log-1") as any;
+    expect(after).toEqual({
+      service: "voice-gateway",
+      level: "info",
+      message: "queued ingest",
+    });
+  });
+
+  it("requires a queue binding when queued mode is enabled", async () => {
+    ctx = createTestContext({ env: { INGEST_MODE: "queued" } });
+
+    const res = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        id: "missing-queue-log",
+        service: "voice-gateway",
+        level: "info",
+        message: "missing queue",
+      }),
+    });
+
+    expect(res.status).toBe(503);
+    const body = await res.json() as { error: string };
+    expect(body.error).toContain("Telemetry queue is not configured");
+  });
+
+  it("validates queued requests before enqueueing", async () => {
+    const queue = createTelemetryQueueHarness();
+    ctx = createTestContext({
+      env: {
+        INGEST_MODE: "queued",
+        TELEMETRY_QUEUE: queue.queue,
+      },
+    });
+
+    const res = await ctx.request("/api/ingest/connections", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ connection_type: "ws" }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(queue.messages).toHaveLength(0);
   });
 });

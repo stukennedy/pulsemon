@@ -88,7 +88,11 @@ Optional production controls:
 ```bash
 wrangler secret put UI_BASIC_AUTH   # value format: username:password
 wrangler secret put INGEST_API_KEYS # JSON map of bearer token to scopes
+wrangler secret put INGEST_MODE     # direct or queued
 wrangler secret put INGEST_MAX_BYTES
+wrangler secret put INGEST_QUEUE_MAX_BYTES
+wrangler secret put INGEST_QUEUE_MAX_OPERATIONS
+wrangler secret put INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS
 wrangler secret put INGEST_REDACT_KEYS
 wrangler secret put INGEST_ATTRIBUTE_DENY_KEYS
 wrangler secret put INGEST_ATTRIBUTE_ALLOW_KEYS
@@ -140,6 +144,14 @@ available at `/api/admin/auth/policy`.
 
 `INGEST_MAX_BYTES` defaults to `1000000` bytes and rejects oversized ingest
 payloads before decoding JSON.
+`INGEST_MODE` defaults to `direct`, which validates requests and writes to D1
+synchronously. Set `INGEST_MODE=queued` in production with the
+`TELEMETRY_QUEUE` binding configured to validate/auth/govern/sample at the edge,
+return `202 Accepted`, and persist telemetry from the queue consumer.
+`INGEST_QUEUE_MAX_BYTES` defaults to `100000` bytes to keep queue messages below
+Cloudflare Queue message limits. `INGEST_QUEUE_MAX_OPERATIONS` defaults to
+`250`, and `INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS` defaults to `250`; both are
+capped at `900` to keep D1 write batches below platform limits.
 `INGEST_API_KEYS` can replace `INGEST_API_KEY` when you need scoped keys, for
 example `{ "logs-token": ["logs"], "admin-token": ["*"] }`. Scoped key entries
 can also bind records to a workspace/project:

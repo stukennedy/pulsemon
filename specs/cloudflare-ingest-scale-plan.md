@@ -169,15 +169,15 @@ Evaluate and choose one or more:
 
 ### Phase 2: Queue-Backed Ingest
 
-- Add a queue binding in `wrangler.jsonc` for telemetry ingest.
-- Add an ingest mode flag:
+- [x] Add a queue binding in `wrangler.jsonc` for telemetry ingest.
+- [x] Add an ingest mode flag:
   - `direct`: current synchronous D1 writes for local/dev.
   - `queued`: validate/auth/govern/sample then enqueue and return `202`.
-- Add queue message envelopes with tenant, scope, signal, normalized records,
+- [x] Add queue message envelopes with tenant, scope, signal, normalized records,
   idempotency keys, and version.
-- Add a queue consumer that batches writes and enforces per-consumer caps below
-  D1 query limits.
-- Add dead-letter handling and replay scripts.
+- [x] Add a queue consumer that enforces per-message write caps below D1 query
+  limits.
+- [ ] Add queue backlog/dead-letter monitoring and replay tooling.
 
 ### Phase 3: Raw Store Separation
 

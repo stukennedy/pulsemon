@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { loadRoutes } from "@/router";
 import { loadLayouts } from "@/layouts";
 import { checkUiAuth } from "@/lib/auth";
+import type { TelemetryQueueMessage } from "@/lib/effect/telemetry-queue";
 import type { Env } from "@/types";
 import { readFileSync, readdirSync } from "fs";
 import path from "path";
@@ -93,6 +94,25 @@ export interface TestContext {
 
 export interface TestContextOptions {
   env?: Partial<Env>;
+}
+
+export interface TelemetryQueueHarness {
+  messages: TelemetryQueueMessage[];
+  queue: Queue<TelemetryQueueMessage>;
+}
+
+export function createTelemetryQueueHarness(): TelemetryQueueHarness {
+  const messages: TelemetryQueueMessage[] = [];
+  const queue = {
+    send: async (body: TelemetryQueueMessage) => {
+      messages.push(body);
+    },
+    sendBatch: async (batch: Iterable<{ body: TelemetryQueueMessage }>) => {
+      for (const item of batch) messages.push(item.body);
+    },
+  } as unknown as Queue<TelemetryQueueMessage>;
+
+  return { messages, queue };
 }
 
 export function createTestContext(options: TestContextOptions = {}): TestContext {

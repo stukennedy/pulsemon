@@ -31,6 +31,23 @@ import {
   type OtlpDeps,
 } from "@/lib/effect/otlp";
 import {
+  enqueueAgentToolCalls,
+  enqueueBatch,
+  enqueueConnection,
+  enqueueConnectionPatch,
+  enqueueEvents,
+  enqueueLogs,
+  enqueueMetrics,
+  enqueueOtlpLogs,
+  enqueueOtlpMetrics,
+  enqueueOtlpTraces,
+  enqueueSpan,
+  enqueueSpanPatch,
+  enqueueVoiceTurns,
+  type QueuedIngestDeps,
+  type TelemetryQueueMessage,
+} from "@/lib/effect/telemetry-queue";
+import {
   decodeOtlpLogsProtobuf,
   decodeOtlpMetricsProtobuf,
   decodeOtlpTracesProtobuf,
@@ -39,11 +56,7 @@ import { makeD1TelemetryRepository } from "@/lib/effect/repository";
 import { makeIngestPressureController } from "@/lib/effect/pressure";
 import { tenantScopeFromEnv } from "@/lib/tenant";
 
-type DirectD1IngestEnv = {
-  readonly INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS?: string;
-};
-
-function directD1BatchOperationLimit(env: Env & DirectD1IngestEnv) {
+function directD1BatchOperationLimit(env: Env) {
   const raw = env.INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS;
   if (raw === undefined || raw.trim() === "") return undefined;
   return Number(raw);
@@ -78,6 +91,33 @@ function otlpDeps(c: Context<{ Bindings: Env }>, requiredScope: string): OtlpDep
     governance: governanceConfigFromEnv(c.env),
     cardinality: makeIngestCardinalityController(c.env.DB, c.env),
   };
+}
+
+function queuedDeps(c: Context<{ Bindings: Env }>, requiredScope: string): QueuedIngestDeps {
+  return {
+    expectedApiKey: c.env.INGEST_API_KEY,
+    apiKeys: c.env.INGEST_API_KEYS,
+    authorization: c.req.header("Authorization") ?? "",
+    requiredScope,
+    defaultTenant: tenantScopeFromEnv(c.env),
+    queue: c.env.TELEMETRY_QUEUE as Queue<TelemetryQueueMessage> | undefined,
+    governance: governanceConfigFromEnv(c.env),
+    sampleRate: c.env.INGEST_SAMPLE_RATE,
+    queueMaxBytes: c.env.INGEST_QUEUE_MAX_BYTES,
+    queueMaxOperations: c.env.INGEST_QUEUE_MAX_OPERATIONS,
+  };
+}
+
+function isQueuedMode(c: Context<{ Bindings: Env }>) {
+  return (c.env.INGEST_MODE ?? "direct").toLowerCase() === "queued";
+}
+
+function ingestProgram(
+  c: Context<{ Bindings: Env }>,
+  queued: () => Effect.Effect<unknown, IngestError>,
+  direct: () => Effect.Effect<unknown, IngestError>
+): Effect.Effect<unknown, IngestError> {
+  return isQueuedMode(c) ? queued() : direct();
 }
 
 const DEFAULT_INGEST_MAX_BYTES = 1_000_000;
@@ -253,88 +293,142 @@ async function runJson<A>(
 export const postConnections = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postConnectionEffect(deps(c, "connections"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueConnection(queuedDeps(c, "connections"), body),
+      () => postConnectionEffect(deps(c, "connections"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const patchConnection = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => patchConnectionEffect(deps(c, "connections"), c.req.param("id"), body)))
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueConnectionPatch(queuedDeps(c, "connections"), c.req.param("id"), body),
+      () => patchConnectionEffect(deps(c, "connections"), c.req.param("id"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 200
   );
 
 export const postSpans = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postSpanEffect(deps(c, "traces"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueSpan(queuedDeps(c, "traces"), body),
+      () => postSpanEffect(deps(c, "traces"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const patchSpan = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => patchSpanEffect(deps(c, "traces"), c.req.param("id"), body)))
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueSpanPatch(queuedDeps(c, "traces"), c.req.param("id"), body),
+      () => patchSpanEffect(deps(c, "traces"), c.req.param("id"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 200
   );
 
 export const postEvents = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postEventsEffect(deps(c, "events"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueEvents(queuedDeps(c, "events"), body),
+      () => postEventsEffect(deps(c, "events"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postMetrics = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postMetricsEffect(deps(c, "metrics"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueMetrics(queuedDeps(c, "metrics"), body),
+      () => postMetricsEffect(deps(c, "metrics"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postLogs = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postLogsEffect(deps(c, "logs"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueLogs(queuedDeps(c, "logs"), body),
+      () => postLogsEffect(deps(c, "logs"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postVoiceTurns = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postVoiceTurnsEffect(deps(c, "voice"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueVoiceTurns(queuedDeps(c, "voice"), body),
+      () => postVoiceTurnsEffect(deps(c, "voice"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postAgentToolCalls = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postAgentToolCallsEffect(deps(c, "agent"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueAgentToolCalls(queuedDeps(c, "agent"), body),
+      () => postAgentToolCallsEffect(deps(c, "agent"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postBatch = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readJson(c).pipe(Effect.flatMap((body) => postBatchEffect(deps(c, "*"), body))),
-    201
+    readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueBatch(queuedDeps(c, "*"), body),
+      () => postBatchEffect(deps(c, "*"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postOtlpTraces = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readOtlp(c, decodeOtlpTracesProtobuf).pipe(Effect.flatMap((body) => postOtlpTracesEffect(otlpDeps(c, "traces"), body))),
-    201
+    readOtlp(c, decodeOtlpTracesProtobuf).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueOtlpTraces(queuedDeps(c, "traces"), body),
+      () => postOtlpTracesEffect(otlpDeps(c, "traces"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postOtlpMetrics = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readOtlp(c, decodeOtlpMetricsProtobuf).pipe(Effect.flatMap((body) => postOtlpMetricsEffect(otlpDeps(c, "metrics"), body))),
-    201
+    readOtlp(c, decodeOtlpMetricsProtobuf).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueOtlpMetrics(queuedDeps(c, "metrics"), body),
+      () => postOtlpMetricsEffect(otlpDeps(c, "metrics"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );
 
 export const postOtlpLogs = (c: Context<{ Bindings: Env }>) =>
   runJson(
     c,
-    readOtlp(c, decodeOtlpLogsProtobuf).pipe(Effect.flatMap((body) => postOtlpLogsEffect(otlpDeps(c, "logs"), body))),
-    201
+    readOtlp(c, decodeOtlpLogsProtobuf).pipe(Effect.flatMap((body) => ingestProgram(
+      c,
+      () => enqueueOtlpLogs(queuedDeps(c, "logs"), body),
+      () => postOtlpLogsEffect(otlpDeps(c, "logs"), body)
+    ))),
+    isQueuedMode(c) ? 202 : 201
   );

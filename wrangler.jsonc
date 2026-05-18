@@ -16,6 +16,23 @@
       "migrations_dir": "migrations"
     }
   ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "TELEMETRY_QUEUE",
+        "queue": "pulsemon-telemetry"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "pulsemon-telemetry",
+        "max_batch_size": 25,
+        "max_batch_timeout": 5,
+        "max_retries": 3,
+        "dead_letter_queue": "pulsemon-telemetry-dlq"
+      }
+    ]
+  },
   "durable_objects": {
     "bindings": [
       {
