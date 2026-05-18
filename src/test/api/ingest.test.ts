@@ -1,6 +1,11 @@
 import { describe, expect, it, beforeEach } from "bun:test";
 import { processTelemetryQueueMessages } from "@/lib/effect/telemetry-queue";
-import { createTelemetryQueueHarness, createTestContext, type TestContext } from "../helpers";
+import {
+  createRawTelemetryBucketHarness,
+  createTelemetryQueueHarness,
+  createTestContext,
+  type TestContext,
+} from "../helpers";
 
 const authHeaders = {
   Authorization: "Bearer test-key",
@@ -454,10 +459,13 @@ describe("POST /api/ingest", () => {
 
   it("queues ingest requests when queued mode is enabled", async () => {
     const queue = createTelemetryQueueHarness();
+    const rawTelemetry = createRawTelemetryBucketHarness();
     ctx = createTestContext({
       env: {
         INGEST_MODE: "queued",
         TELEMETRY_QUEUE: queue.queue,
+        RAW_TELEMETRY: rawTelemetry.bucket,
+        RAW_TELEMETRY_PREFIX: "raw-test",
       },
     });
 
@@ -486,7 +494,11 @@ describe("POST /api/ingest", () => {
       .get("queued-log-1") as any;
     expect(before.count).toBe(0);
 
-    await processTelemetryQueueMessages({ DB: ctx.d1 }, queue.messages);
+    await processTelemetryQueueMessages({
+      DB: ctx.d1,
+      RAW_TELEMETRY: rawTelemetry.bucket,
+      RAW_TELEMETRY_PREFIX: "raw-test",
+    }, queue.messages);
 
     const after = ctx.sqlite
       .prepare("SELECT service, level, message FROM logs WHERE id = ?")
@@ -495,6 +507,12 @@ describe("POST /api/ingest", () => {
       service: "voice-gateway",
       level: "info",
       message: "queued ingest",
+    });
+    expect(rawTelemetry.objects).toHaveLength(1);
+    expect(rawTelemetry.objects[0]?.key).toContain("raw-test/workspace=default/project=default/signal=logs/");
+    expect(JSON.parse(rawTelemetry.objects[0]?.body ?? "{}")).toMatchObject({
+      signal: "logs",
+      counts: { logs: 1 },
     });
   });
 

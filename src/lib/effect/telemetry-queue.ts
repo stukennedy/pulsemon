@@ -31,6 +31,7 @@ import {
   normalizeOtlpMetricBatch,
   normalizeOtlpTraceBatch,
 } from "./otlp";
+import { archiveRawTelemetryMessage } from "./raw-telemetry";
 import { makeD1TelemetryRepository } from "./repository";
 import type {
   AgentToolCallInsert,
@@ -696,7 +697,15 @@ export function enqueueOtlpLogs(deps: QueuedIngestDeps, raw: unknown) {
 }
 
 export function writeTelemetryQueueMessage(
-  env: Pick<Env, "DB" | "INGEST_CARDINALITY_MAX_VALUES_PER_KEY" | "INGEST_QUEUE_MAX_OPERATIONS">,
+  env: Pick<
+    Env,
+    | "DB"
+    | "INGEST_CARDINALITY_MAX_VALUES_PER_KEY"
+    | "INGEST_QUEUE_MAX_OPERATIONS"
+    | "RAW_TELEMETRY"
+    | "RAW_TELEMETRY_PREFIX"
+    | "RAW_TELEMETRY_REQUIRED"
+  >,
   message: TelemetryQueueMessage
 ): Effect.Effect<void, IngestError> {
   const repository = makeD1TelemetryRepository(env.DB);
@@ -707,13 +716,22 @@ export function writeTelemetryQueueMessage(
     if (total > maxOperations) {
       return yield* Effect.fail(new PayloadTooLargeError({ message: `Max ${maxOperations} operations per batch` }));
     }
+    yield* archiveRawTelemetryMessage(env, message);
     yield* cardinality.enforce(message.context, message.required_scope, message.batch);
     yield* repository.writeBatch(message.batch);
   });
 }
 
 export async function processTelemetryQueueMessages(
-  env: Pick<Env, "DB" | "INGEST_CARDINALITY_MAX_VALUES_PER_KEY" | "INGEST_QUEUE_MAX_OPERATIONS">,
+  env: Pick<
+    Env,
+    | "DB"
+    | "INGEST_CARDINALITY_MAX_VALUES_PER_KEY"
+    | "INGEST_QUEUE_MAX_OPERATIONS"
+    | "RAW_TELEMETRY"
+    | "RAW_TELEMETRY_PREFIX"
+    | "RAW_TELEMETRY_REQUIRED"
+  >,
   messages: readonly TelemetryQueueMessage[]
 ) {
   for (const message of messages) {
@@ -722,7 +740,15 @@ export async function processTelemetryQueueMessages(
 }
 
 export async function processTelemetryQueueBatch(
-  env: Pick<Env, "DB" | "INGEST_CARDINALITY_MAX_VALUES_PER_KEY" | "INGEST_QUEUE_MAX_OPERATIONS">,
+  env: Pick<
+    Env,
+    | "DB"
+    | "INGEST_CARDINALITY_MAX_VALUES_PER_KEY"
+    | "INGEST_QUEUE_MAX_OPERATIONS"
+    | "RAW_TELEMETRY"
+    | "RAW_TELEMETRY_PREFIX"
+    | "RAW_TELEMETRY_REQUIRED"
+  >,
   batch: MessageBatch<TelemetryQueueMessage>
 ) {
   for (const message of batch.messages) {

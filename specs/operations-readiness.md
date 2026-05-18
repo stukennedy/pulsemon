@@ -28,6 +28,10 @@ Recommended controls:
 - `INGEST_QUEUE_MAX_OPERATIONS=250` and
   `INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS=250`, raised only with capacity
   evidence and never above `900`.
+- `RAW_TELEMETRY_REQUIRED=true` in production once the `RAW_TELEMETRY` R2 bucket
+  has been created and smoke tested.
+- `RAW_TELEMETRY_PREFIX=telemetry` or an environment-specific prefix such as
+  `production/telemetry`.
 - `INGEST_RATE_LIMIT_PER_MINUTE` sized per ingest token.
 - `INGEST_SAMPLE_RATE=1` initially, lowered only for high-volume events/logs.
 - `INGEST_CARDINALITY_MAX_VALUES_PER_KEY` enabled after observing normal tag
@@ -150,10 +154,20 @@ Queued ingest pass criteria:
 
 - `TELEMETRY_QUEUE` is bound in every deployed environment that sets
   `INGEST_MODE=queued`.
+- `RAW_TELEMETRY` is bound before `RAW_TELEMETRY_REQUIRED=true` is enabled.
 - `pulsemon-telemetry-dlq` exists and is monitored.
 - Queue backlog age and retry/dead-letter counts are part of the capacity gate.
 - Smoke checks verify eventual readback rather than only immediate HTTP
   acknowledgement.
+
+Queued raw telemetry archival:
+
+- Queue consumers write the normalized queue envelope to R2 before D1
+  persistence when the `RAW_TELEMETRY` binding exists.
+- R2 keys are partitioned by workspace, project, signal, and UTC hour:
+  `telemetry/workspace=<id>/project=<id>/signal=<signal>/year=YYYY/month=MM/day=DD/hour=HH/<message-id>.json`.
+- If `RAW_TELEMETRY_REQUIRED=true`, missing or failed R2 writes fail the queue
+  message so it can retry and eventually move to the dead-letter queue.
 
 ## Smoke And Load Checks
 

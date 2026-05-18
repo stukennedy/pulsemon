@@ -16,6 +16,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "RAW_TELEMETRY",
+      "bucket_name": "pulsemon-raw-telemetry"
+    }
+  ],
   "queues": {
     "producers": [
       {

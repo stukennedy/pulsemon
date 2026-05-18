@@ -93,6 +93,8 @@ wrangler secret put INGEST_MAX_BYTES
 wrangler secret put INGEST_QUEUE_MAX_BYTES
 wrangler secret put INGEST_QUEUE_MAX_OPERATIONS
 wrangler secret put INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS
+wrangler secret put RAW_TELEMETRY_REQUIRED
+wrangler secret put RAW_TELEMETRY_PREFIX
 wrangler secret put INGEST_REDACT_KEYS
 wrangler secret put INGEST_ATTRIBUTE_DENY_KEYS
 wrangler secret put INGEST_ATTRIBUTE_ALLOW_KEYS
@@ -152,6 +154,10 @@ return `202 Accepted`, and persist telemetry from the queue consumer.
 Cloudflare Queue message limits. `INGEST_QUEUE_MAX_OPERATIONS` defaults to
 `250`, and `INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS` defaults to `250`; both are
 capped at `900` to keep D1 write batches below platform limits.
+When `RAW_TELEMETRY` is bound, queued ingest archives each normalized queue
+envelope to R2 before D1 persistence. Set `RAW_TELEMETRY_REQUIRED=true` in
+production to retry queue messages instead of accepting a missing bucket, and
+use `RAW_TELEMETRY_PREFIX` to choose the R2 key prefix.
 `INGEST_API_KEYS` can replace `INGEST_API_KEY` when you need scoped keys, for
 example `{ "logs-token": ["logs"], "admin-token": ["*"] }`. Scoped key entries
 can also bind records to a workspace/project:

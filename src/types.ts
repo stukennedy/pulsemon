@@ -17,7 +17,10 @@ export interface Env {
   DB: D1Database;
   SEARCH_SESSION: DurableObjectNamespace;
   TELEMETRY_QUEUE?: Queue;
+  RAW_TELEMETRY?: R2Bucket;
   INGEST_MODE?: string;
+  RAW_TELEMETRY_REQUIRED?: string;
+  RAW_TELEMETRY_PREFIX?: string;
   INGEST_API_KEY?: string;
   INGEST_API_KEYS?: string;
   INGEST_MAX_BYTES?: string;

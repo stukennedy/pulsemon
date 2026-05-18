@@ -101,6 +101,17 @@ export interface TelemetryQueueHarness {
   queue: Queue<TelemetryQueueMessage>;
 }
 
+export interface RawTelemetryObject {
+  key: string;
+  body: string;
+  options: R2PutOptions | undefined;
+}
+
+export interface RawTelemetryBucketHarness {
+  objects: RawTelemetryObject[];
+  bucket: R2Bucket;
+}
+
 export function createTelemetryQueueHarness(): TelemetryQueueHarness {
   const messages: TelemetryQueueMessage[] = [];
   const queue = {
@@ -113,6 +124,18 @@ export function createTelemetryQueueHarness(): TelemetryQueueHarness {
   } as unknown as Queue<TelemetryQueueMessage>;
 
   return { messages, queue };
+}
+
+export function createRawTelemetryBucketHarness(): RawTelemetryBucketHarness {
+  const objects: RawTelemetryObject[] = [];
+  const bucket = {
+    put: async (key: string, value: string, options?: R2PutOptions) => {
+      objects.push({ key, body: value, options });
+      return null;
+    },
+  } as unknown as R2Bucket;
+
+  return { objects, bucket };
 }
 
 export function createTestContext(options: TestContextOptions = {}): TestContext {

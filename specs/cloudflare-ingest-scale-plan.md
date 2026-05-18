@@ -181,10 +181,12 @@ Evaluate and choose one or more:
 
 ### Phase 3: Raw Store Separation
 
-- Write raw logs/events/spans/metric samples to the selected raw telemetry
-  store.
-- Continue writing D1 rollups/index rows needed by UI, monitors, SLOs, and
-  recent investigations.
+- [x] Archive normalized queued ingest envelopes to R2 before D1 persistence
+  when the `RAW_TELEMETRY` binding is configured.
+- [x] Continue writing D1 rows needed by UI, monitors, SLOs, and recent
+  investigations.
+- [ ] Split high-volume raw logs/events/spans/metric samples into queryable raw
+  partitions rather than only archived queue envelopes.
 - Add query APIs that can read D1 summaries first and fetch raw detail only when
   the user drills in.
 
