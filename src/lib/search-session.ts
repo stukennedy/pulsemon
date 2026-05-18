@@ -28,36 +28,64 @@ import { TagBar } from "@/components/TagBar";
 import { ConnectionStatsBar } from "@/components/StatsBar";
 import { FacetList, ValueList, NoResults } from "@/components/Dropdown";
 
+interface SearchSocketState {
+  view: string;
+  tags: ActiveTag[];
+  fallbackSeq: number;
+  dropdownSeq: number;
+  resultsSeq: number;
+}
+
+interface WsPayload {
+  request_id?: unknown;
+  client_seq?: unknown;
+  values?: unknown;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
 export class SearchSession extends DurableObject<Env> {
-  private tags: ActiveTag[] = [];
-  private view: string = "connections";
+  private socketState = new WeakMap<WebSocket, SearchSocketState>();
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (url.pathname !== "/ws") return new Response("Not found", { status: 404 });
 
-    this.view = url.searchParams.get("view") || "connections";
+    const state: SearchSocketState = {
+      view: url.searchParams.get("view") || "connections",
+      tags: [],
+      fallbackSeq: 0,
+      dropdownSeq: 0,
+      resultsSeq: 0,
+    };
 
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
     this.ctx.acceptWebSocket(server);
+    this.socketState.set(server, state);
 
-    if (this.view === "connections") {
+    if (state.view === "connections") {
       const deps = this.queryDeps();
       const [{ connections, total }, stats] = await Promise.all([
-        this.runQuery(queryConnectionsEffect(deps, this.tags)),
-        this.runQuery(queryConnectionStatsEffect(deps, this.tags)),
+        this.runQuery(queryConnectionsEffect(deps, state.tags)),
+        this.runQuery(queryConnectionStatsEffect(deps, state.tags)),
       ]);
       this.sendUi(server, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })));
       this.sendUi(server, "#stats-bar", "outerHTML", await jsxToString(ConnectionStatsBar({ stats })));
-    } else if (this.view === "traces") {
-      const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), this.tags));
+    } else if (state.view === "traces") {
+      const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), state.tags));
       this.sendUi(server, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
-    } else if (this.view === "logs") {
-      const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), this.tags));
+    } else if (state.view === "logs") {
+      const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), state.tags));
       this.sendUi(server, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
-    } else if (this.view === "metrics") {
-      const { metrics, summaries, total } = await this.runQuery(queryMetricOverviewEffect(this.queryDeps(), this.tags));
+    } else if (state.view === "metrics") {
+      const { metrics, summaries, total } = await this.runQuery(queryMetricOverviewEffect(this.queryDeps(), state.tags));
       this.sendUi(server, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })));
     }
 
@@ -66,46 +94,61 @@ export class SearchSession extends DurableObject<Env> {
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
     if (typeof message !== "string") return;
-    let msg: any;
-    try { msg = JSON.parse(message); } catch { return; }
+    const state = this.socketState.get(ws);
+    if (!state) return;
 
-    const values = msg.values || {};
-    const action = (values.action || "").trim();
-    const query = (values.query || "").trim();
-    const tagsStr = values.tags || "";
+    let msg: WsPayload;
+    try {
+      const parsed = JSON.parse(message) as unknown;
+      if (!isRecord(parsed)) return;
+      msg = parsed;
+    } catch {
+      return;
+    }
+
+    const values = isRecord(msg.values) ? msg.values : {};
+    const action = stringValue(values.action).trim();
+    const query = stringValue(values.query).trim();
+    const tagsStr = stringValue(values.tags);
     const activeTags = this.parseTags(tagsStr);
+    const requestId = stringValue(msg.request_id) || undefined;
+    const seq = this.requestSequence(state, msg.client_seq ?? values.client_seq);
 
     if (action === "suggest") {
-      await this.handleSuggest(ws, query, activeTags, msg.request_id);
+      if (!this.beginDropdownRequest(state, seq)) return;
+      await this.handleSuggest(ws, state, query, activeTags, requestId, seq);
     } else if (action === "add_tag") {
-      activeTags.push({ facet: values.facet || "", value: values.value || "" });
-      this.tags = activeTags;
-      await this.refreshAll(ws, activeTags);
+      activeTags.push({ facet: stringValue(values.facet), value: stringValue(values.value) });
+      await this.refreshAll(ws, state, activeTags, requestId, seq);
     } else if (action === "remove_tag") {
-      const idx = parseInt(values.removeIdx || "0", 10);
+      const idx = parseInt(stringValue(values.removeIdx) || "0", 10);
       if (idx >= 0 && idx < activeTags.length) activeTags.splice(idx, 1);
-      this.tags = activeTags;
-      await this.refreshAll(ws, activeTags);
+      await this.refreshAll(ws, state, activeTags, requestId, seq);
     } else if (action === "refresh") {
-      this.tags = activeTags;
-      await this.refreshTable(ws, activeTags);
+      await this.refreshTable(ws, state, activeTags, requestId, seq);
     } else if (action === "set_tags") {
-      this.tags = activeTags;
-      await this.refreshAll(ws, activeTags);
+      await this.refreshAll(ws, state, activeTags, requestId, seq);
     }
   }
 
-  webSocketClose() {}
-  webSocketError() {}
-
-  private sendUi(ws: WebSocket, target: string, swap: string, payload: string) {
-    ws.send(JSON.stringify({ channel: "ui", format: "html", target, swap, payload }));
+  webSocketClose(ws: WebSocket) {
+    this.socketState.delete(ws);
   }
 
-  private getFacetNames(): string[] {
-    if (this.view === "traces") return SPAN_FACET_NAMES;
-    if (this.view === "logs") return LOG_FACET_NAMES;
-    if (this.view === "metrics") return METRIC_FACET_NAMES;
+  webSocketError(ws: WebSocket) {
+    this.socketState.delete(ws);
+  }
+
+  private sendUi(ws: WebSocket, target: string, swap: string, payload: string, requestId?: string) {
+    const message: Record<string, string> = { channel: "ui", format: "html", target, swap, payload };
+    if (requestId) message.request_id = requestId;
+    ws.send(JSON.stringify(message));
+  }
+
+  private getFacetNames(view: string): string[] {
+    if (view === "traces") return SPAN_FACET_NAMES;
+    if (view === "logs") return LOG_FACET_NAMES;
+    if (view === "metrics") return METRIC_FACET_NAMES;
     return CONNECTION_FACET_NAMES;
   }
 
@@ -117,21 +160,64 @@ export class SearchSession extends DurableObject<Env> {
     return Effect.runPromise(program);
   }
 
-  private async getFacetValues(facet: string, prefix: string, tags: ActiveTag[]): Promise<string[]> {
-    if (this.view === "traces") {
+  private requestSequence(state: SearchSocketState, raw: unknown): number {
+    const seq = typeof raw === "number"
+      ? raw
+      : typeof raw === "string" && raw.trim() !== ""
+        ? Number(raw)
+        : NaN;
+    if (Number.isSafeInteger(seq) && seq > 0) {
+      state.fallbackSeq = Math.max(state.fallbackSeq, seq);
+      return seq;
+    }
+
+    state.fallbackSeq += 1;
+    return state.fallbackSeq;
+  }
+
+  private beginDropdownRequest(state: SearchSocketState, seq: number) {
+    if (seq < state.dropdownSeq) return false;
+    state.dropdownSeq = seq;
+    return true;
+  }
+
+  private beginResultsRequest(state: SearchSocketState, seq: number, clearsDropdown: boolean) {
+    if (seq < state.resultsSeq) return false;
+    state.resultsSeq = seq;
+    if (clearsDropdown && seq > state.dropdownSeq) state.dropdownSeq = seq;
+    return true;
+  }
+
+  private isCurrentDropdownRequest(state: SearchSocketState, seq: number) {
+    return seq === state.dropdownSeq;
+  }
+
+  private isCurrentResultsRequest(state: SearchSocketState, seq: number) {
+    return seq === state.resultsSeq;
+  }
+
+  private async getFacetValues(view: string, facet: string, prefix: string, tags: ActiveTag[]): Promise<string[]> {
+    if (view === "traces") {
       return this.runQuery(getSpanFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
     }
-    if (this.view === "logs") {
+    if (view === "logs") {
       return this.runQuery(getLogFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
     }
-    if (this.view === "metrics") {
+    if (view === "metrics") {
       return this.runQuery(getMetricFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
     }
     return this.runQuery(getConnectionFacetValuesEffect(this.queryDeps(), facet, prefix, tags));
   }
 
-  private async handleSuggest(ws: WebSocket, query: string, activeTags: ActiveTag[], requestId?: string) {
-    const facetNames = this.getFacetNames();
+  private async handleSuggest(
+    ws: WebSocket,
+    state: SearchSocketState,
+    query: string,
+    activeTags: ActiveTag[],
+    requestId: string | undefined,
+    seq: number
+  ) {
+    const facetNames = this.getFacetNames(state.view);
     let html: string;
 
     if (!query) {
@@ -144,7 +230,7 @@ export class SearchSession extends DurableObject<Env> {
         if (!facetNames.includes(facet)) {
           html = await jsxToString(NoResults({ message: `Unknown facet: ${facet}` }));
         } else {
-          const values = await this.getFacetValues(facet, prefix, activeTags);
+          const values = await this.getFacetValues(state.view, facet, prefix, activeTags);
           html = values.length === 0
             ? await jsxToString(NoResults({ message: "No matching values" }))
             : await jsxToString(ValueList({ facet, values }));
@@ -157,54 +243,79 @@ export class SearchSession extends DurableObject<Env> {
       }
     }
 
-    ws.send(JSON.stringify({
-      channel: "ui", format: "html",
-      target: "#dropdown", swap: "innerHTML",
-      payload: html, request_id: requestId,
-    }));
+    if (!this.isCurrentDropdownRequest(state, seq)) return;
+    this.sendUi(ws, "#dropdown", "innerHTML", html, requestId);
   }
 
-  private async refreshTable(ws: WebSocket, tags: ActiveTag[]) {
-    if (this.view === "connections") {
+  private async refreshTable(
+    ws: WebSocket,
+    state: SearchSocketState,
+    tags: ActiveTag[],
+    requestId: string | undefined,
+    seq: number
+  ) {
+    if (!this.beginResultsRequest(state, seq, false)) return;
+    state.tags = tags;
+
+    if (state.view === "connections") {
       const { connections, total } = await this.runQuery(queryConnectionsEffect(this.queryDeps(), tags));
-      this.sendUi(ws, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })));
-    } else if (this.view === "traces") {
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })), requestId);
+    } else if (state.view === "traces") {
       const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), tags));
-      this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
-    } else if (this.view === "logs") {
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })), requestId);
+    } else if (state.view === "logs") {
       const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), tags));
-      this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
-    } else if (this.view === "metrics") {
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })), requestId);
+    } else if (state.view === "metrics") {
       const { metrics, summaries, total } = await this.runQuery(queryMetricOverviewEffect(this.queryDeps(), tags));
-      this.sendUi(ws, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })));
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })), requestId);
     }
   }
 
-  private async refreshAll(ws: WebSocket, tags: ActiveTag[]) {
+  private async refreshAll(
+    ws: WebSocket,
+    state: SearchSocketState,
+    tags: ActiveTag[],
+    requestId: string | undefined,
+    seq: number
+  ) {
+    if (!this.beginResultsRequest(state, seq, true)) return;
+    state.tags = tags;
+
     const tagsStr = tags.map((t) => `${t.facet}:${t.value}`).join("|");
 
-    if (this.view === "connections") {
+    if (state.view === "connections") {
       const deps = this.queryDeps();
       const [{ connections, total }, stats] = await Promise.all([
         this.runQuery(queryConnectionsEffect(deps, tags)),
         this.runQuery(queryConnectionStatsEffect(deps, tags)),
       ]);
-      this.sendUi(ws, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })));
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#connection-table", "outerHTML", await jsxToString(ConnectionTable({ connections, total })), requestId);
       this.sendUi(ws, "#stats-bar", "outerHTML", await jsxToString(ConnectionStatsBar({ stats })));
-    } else if (this.view === "traces") {
+    } else if (state.view === "traces") {
       const { spans, total } = await this.runQuery(querySpansEffect(this.queryDeps(), tags));
-      this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })));
-    } else if (this.view === "logs") {
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#trace-table", "outerHTML", await jsxToString(TraceList({ spans, total })), requestId);
+    } else if (state.view === "logs") {
       const { logs, total } = await this.runQuery(queryLogsEffect(this.queryDeps(), tags));
-      this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })));
-    } else if (this.view === "metrics") {
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#log-table", "outerHTML", await jsxToString(LogTable({ logs, total })), requestId);
+    } else if (state.view === "metrics") {
       const { metrics, summaries, total } = await this.runQuery(queryMetricOverviewEffect(this.queryDeps(), tags));
-      this.sendUi(ws, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })));
+      if (!this.isCurrentResultsRequest(state, seq)) return;
+      this.sendUi(ws, "#metric-table", "outerHTML", await jsxToString(MetricTable({ metrics, summaries, total })), requestId);
     }
 
+    if (!this.isCurrentResultsRequest(state, seq)) return;
     this.sendUi(ws, "#tag-bar", "outerHTML", await jsxToString(TagBar({ tags })));
-    this.sendUi(ws, "#dropdown", "innerHTML", "");
-    ws.send(JSON.stringify({ channel: "state", tags: tagsStr, clearInput: true }));
+    const clearInput = this.isCurrentDropdownRequest(state, seq);
+    if (clearInput) this.sendUi(ws, "#dropdown", "innerHTML", "");
+    ws.send(JSON.stringify({ channel: "state", tags: tagsStr, clearInput }));
   }
 
   private parseTags(tagsStr: string): ActiveTag[] {

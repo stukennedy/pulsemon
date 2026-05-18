@@ -15,10 +15,87 @@ interface Tag {
 let activeTags: Tag[] = [];
 let highlightIdx = -1;
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let wsClientSeq = 0;
+
+const SEARCH_SESSION_STORAGE_KEY = "pulsemon.searchSessionId";
+const SEARCH_SESSION_QUERY_PARAM = "sid";
+const SEQUENCED_WS_ACTIONS = new Set(["suggest", "add_tag", "remove_tag", "refresh", "set_tags"]);
+
+interface WsSendData {
+  client_seq?: string;
+  values?: Record<string, unknown>;
+}
+
+interface WsSendEventDetail {
+  data?: WsSendData;
+}
 
 const $ = (id: string) => document.getElementById(id) as HTMLElement;
 const input = () => $("search-input") as HTMLInputElement;
 const dropdown = () => $("dropdown");
+
+function newSearchSessionId(): string {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  if (crypto.getRandomValues) {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  }
+  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 14)}`;
+}
+
+function getSearchSessionId(): string {
+  try {
+    const existing = sessionStorage.getItem(SEARCH_SESSION_STORAGE_KEY);
+    if (existing) return existing;
+
+    const sessionId = newSearchSessionId();
+    sessionStorage.setItem(SEARCH_SESSION_STORAGE_KEY, sessionId);
+    return sessionId;
+  } catch {
+    return newSearchSessionId();
+  }
+}
+
+function withSearchSessionId(value: string, sessionId: string): string {
+  try {
+    const url = new URL(value, window.location.href);
+    url.searchParams.set(SEARCH_SESSION_QUERY_PARAM, sessionId);
+    if (url.origin === window.location.origin) {
+      return `${url.pathname}${url.search}${url.hash}`;
+    }
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function installSearchSessionId() {
+  const sessionId = getSearchSessionId();
+  document.querySelectorAll<HTMLElement>("[hx-ws-connect], [hx-ws\\:connect]").forEach((el) => {
+    for (const attr of ["hx-ws-connect", "hx-ws:connect"]) {
+      const value = el.getAttribute(attr);
+      if (!value) continue;
+      el.setAttribute(attr, withSearchSessionId(value, sessionId));
+    }
+  });
+}
+
+function installWsRequestSequencing() {
+  document.body.addEventListener("htmx:before:ws:send", ((event: CustomEvent<WsSendEventDetail>) => {
+    const data = event.detail?.data;
+    const values = data?.values;
+    const action = typeof values?.action === "string" ? values.action : "";
+    if (!data || !values || !SEQUENCED_WS_ACTIONS.has(action)) return;
+
+    const clientSeq = String(++wsClientSeq);
+    data.client_seq = clientSeq;
+    values.client_seq = clientSeq;
+  }) as EventListener);
+}
+
+installSearchSessionId();
+installWsRequestSequencing();
 
 function getTagsStr(): string {
   return activeTags.map((t) => `${t.facet}:${t.value}`).join("|");
