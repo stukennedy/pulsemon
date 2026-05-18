@@ -81,7 +81,7 @@ function buildConditions(activeTags: ActiveTag[], facets: readonly FacetDefiniti
           return null;
         }
 
-        return sql`CAST(${f.col} AS TEXT) = ${tag.value}`;
+        return eq(f.col, tag.value);
       })
       .filter((c): c is NonNullable<typeof c> => c !== null);
 
@@ -121,16 +121,16 @@ export async function getConnectionFacetValues(
   const conditions = [...tenantConditions(connections, tenant), ...buildConnectionConditions(activeTags)];
 
   if (prefix) {
-    conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
+    conditions.push(sql`${f.col} LIKE ${prefix + "%"}`);
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const result = await db
-    .selectDistinct({ val: sql<string>`CAST(${f.col} AS TEXT)` })
+    .selectDistinct({ val: sql<string>`${f.col}` })
     .from(connections)
     .where(where)
-    .orderBy(asc(sql`CAST(${f.col} AS TEXT)`))
+    .orderBy(asc(f.col))
     .limit(50);
 
   return result.map((r) => r.val).filter(Boolean);
@@ -338,16 +338,16 @@ export async function getLogFacetValues(
   const conditions = [...tenantConditions(logs, tenant), ...buildLogConditions(activeTags)];
 
   if (prefix) {
-    conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
+    conditions.push(sql`${f.col} LIKE ${prefix + "%"}`);
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const result = await db
-    .selectDistinct({ val: sql<string>`CAST(${f.col} AS TEXT)` })
+    .selectDistinct({ val: sql<string>`${f.col}` })
     .from(logs)
     .where(where)
-    .orderBy(asc(sql`CAST(${f.col} AS TEXT)`))
+    .orderBy(asc(f.col))
     .limit(50);
 
   return result.map((r) => r.val).filter(Boolean);
@@ -367,16 +367,16 @@ export async function getMetricFacetValues(
   const conditions = [...tenantConditions(metrics, tenant), ...buildMetricConditions(activeTags)];
 
   if (prefix) {
-    conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
+    conditions.push(sql`${f.col} LIKE ${prefix + "%"}`);
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const result = await db
-    .selectDistinct({ val: sql<string>`CAST(${f.col} AS TEXT)` })
+    .selectDistinct({ val: sql<string>`${f.col}` })
     .from(metrics)
     .where(where)
-    .orderBy(asc(sql`CAST(${f.col} AS TEXT)`))
+    .orderBy(asc(f.col))
     .limit(50);
 
   return result.map((r) => r.val).filter(Boolean);
@@ -396,16 +396,16 @@ export async function getSpanFacetValues(
   const conditions = [...tenantConditions(spans, tenant), ...buildSpanConditions(activeTags)];
 
   if (prefix) {
-    conditions.push(sql`CAST(${f.col} AS TEXT) LIKE ${"%" + prefix + "%"}`);
+    conditions.push(sql`${f.col} LIKE ${prefix + "%"}`);
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   const result = await db
-    .selectDistinct({ val: sql<string>`CAST(${f.col} AS TEXT)` })
+    .selectDistinct({ val: sql<string>`${f.col}` })
     .from(spans)
     .where(where)
-    .orderBy(asc(sql`CAST(${f.col} AS TEXT)`))
+    .orderBy(asc(f.col))
     .limit(50);
 
   return result.map((r) => r.val).filter(Boolean);
