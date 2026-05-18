@@ -70,10 +70,14 @@ export interface IngestDeps {
   readonly authorization: string;
   readonly requiredScope: string;
   readonly defaultTenant: TenantScope;
+  readonly maxBatchOperations?: number;
   readonly pressure?: IngestPressureController;
   readonly governance?: IngestGovernanceConfig;
   readonly cardinality?: IngestCardinalityController;
 }
+
+export const DEFAULT_DIRECT_D1_BATCH_OPERATION_LIMIT = 250;
+const MAX_DIRECT_D1_BATCH_OPERATION_LIMIT = 900;
 
 function uuid() {
   return crypto.randomUUID();
@@ -120,6 +124,32 @@ function preparePressure(
 
 function governanceConfig(deps: IngestDeps) {
   return deps.governance ?? DEFAULT_INGEST_GOVERNANCE_CONFIG;
+}
+
+function directD1BatchOperationLimit(deps: IngestDeps): Effect.Effect<number, ValidationError> {
+  const limit = deps.maxBatchOperations ?? DEFAULT_DIRECT_D1_BATCH_OPERATION_LIMIT;
+  if (
+    !Number.isInteger(limit) ||
+    limit < 1 ||
+    limit > MAX_DIRECT_D1_BATCH_OPERATION_LIMIT
+  ) {
+    return Effect.fail(new ValidationError({
+      message: `INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS must be an integer between 1 and ${MAX_DIRECT_D1_BATCH_OPERATION_LIMIT}`,
+    }));
+  }
+  return Effect.succeed(limit);
+}
+
+function enforceDirectD1BatchOperationLimit(
+  deps: IngestDeps,
+  total: number
+): Effect.Effect<void, ValidationError | PayloadTooLargeError> {
+  return Effect.gen(function* () {
+    const maxBatchOperations = yield* directD1BatchOperationLimit(deps);
+    if (total > maxBatchOperations) {
+      return yield* Effect.fail(new PayloadTooLargeError({ message: `Max ${maxBatchOperations} operations per batch` }));
+    }
+  });
 }
 
 function emptyBatch(): TelemetryBatchWrite {
@@ -505,6 +535,7 @@ export function postEvents(
     );
     const sampled = sampleItems(items, pressure, eventSamplingKey);
     const records = sampled.kept.map((input) => eventInsert(input, auth, governanceConfig(deps)));
+    yield* enforceDirectD1BatchOperationLimit(deps, records.length);
     yield* enforceCardinality(deps, auth, { ...emptyBatch(), events: records });
     if (records.length > 0) {
       yield* deps.repository.insertEvents(records);
@@ -529,6 +560,7 @@ export function postMetrics(
     );
     const sampled = sampleItems(items, pressure, metricSamplingKey);
     const records = sampled.kept.map((input) => metricInsert(input, auth, governanceConfig(deps)));
+    yield* enforceDirectD1BatchOperationLimit(deps, records.length);
     yield* enforceCardinality(deps, auth, { ...emptyBatch(), metrics: records });
     if (records.length > 0) {
       yield* deps.repository.insertMetrics(records);
@@ -553,6 +585,7 @@ export function postLogs(
     );
     const sampled = sampleItems(items, pressure, logSamplingKey);
     const records = sampled.kept.map((input) => logInsert(input, auth, governanceConfig(deps)));
+    yield* enforceDirectD1BatchOperationLimit(deps, records.length);
     yield* enforceCardinality(deps, auth, { ...emptyBatch(), logs: records });
     if (records.length > 0) {
       yield* deps.repository.insertLogs(records);
@@ -576,6 +609,7 @@ export function postVoiceTurns(
       "Max 500 voice turns per request"
     );
     const records = items.map((input) => voiceTurnInsert(input, auth, governanceConfig(deps)));
+    yield* enforceDirectD1BatchOperationLimit(deps, records.length);
     yield* enforceCardinality(deps, auth, { ...emptyBatch(), voiceTurns: records });
     yield* deps.repository.insertVoiceTurns(records);
     return { count: records.length };
@@ -597,6 +631,7 @@ export function postAgentToolCalls(
       "Max 500 tool calls per request"
     );
     const records = items.map((input) => agentToolCallInsert(input, auth, governanceConfig(deps)));
+    yield* enforceDirectD1BatchOperationLimit(deps, records.length);
     yield* enforceCardinality(deps, auth, { ...emptyBatch(), toolCalls: records });
     yield* deps.repository.insertAgentToolCalls(records);
     return { count: records.length };
@@ -620,9 +655,7 @@ export function postBatch(
       }
       return yield* Effect.fail(new ValidationError({ message: "No valid records in batch" }));
     }
-    if (total > 1000) {
-      return yield* Effect.fail(new PayloadTooLargeError({ message: "Max 1000 operations per batch" }));
-    }
+    yield* enforceDirectD1BatchOperationLimit(deps, total);
 
     yield* enforceCardinality(deps, auth, batch);
     yield* deps.repository.writeBatch(batch);

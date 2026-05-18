@@ -34,6 +34,8 @@ describe("Effect maintenance service", () => {
       retentionDays: 7,
       metricRollupAfterMinutes: 0,
       metricRollupRetentionDays: 20000,
+      deleteChunkSize: 500,
+      deleteMaxChunksPerTable: 20,
     }));
 
     expect(result.rollups).toBeGreaterThanOrEqual(1);
@@ -61,6 +63,28 @@ describe("Effect maintenance service", () => {
     expect(remainingConnections.count).toBe(1);
   });
 
+  it("deletes expired rows in bounded chunks", async () => {
+    const ctx = createTestContext();
+    ctx.seedConnection({ id: "expired-conn-1", started_at: "2000-01-01T00:00:00.000Z" });
+    ctx.seedConnection({ id: "expired-conn-2", started_at: "2000-01-01T00:01:00.000Z" });
+    ctx.seedConnection({ id: "expired-conn-3", started_at: "2000-01-01T00:02:00.000Z" });
+
+    const result = await Effect.runPromise(runMaintenance(ctx.d1, {
+      retentionDays: 7,
+      metricRollupAfterMinutes: 0,
+      metricRollupRetentionDays: 20000,
+      deleteChunkSize: 1,
+      deleteMaxChunksPerTable: 2,
+    }));
+
+    expect(result.deleted.connections).toBe(2);
+
+    const remaining = ctx.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM connections WHERE id LIKE 'expired-conn-%'")
+      .get() as any;
+    expect(remaining.count).toBe(1);
+  });
+
   it("validates maintenance retention config", async () => {
     const result = await Effect.runPromise(Effect.either(
       maintenanceConfigFromEnv({ RETENTION_DAYS: "0" })
@@ -70,6 +94,18 @@ describe("Effect maintenance service", () => {
     if (Either.isLeft(result)) {
       expect(result.left._tag).toBe("ValidationError");
       expect(result.left.message).toContain("RETENTION_DAYS");
+    }
+  });
+
+  it("validates maintenance delete chunk config", async () => {
+    const result = await Effect.runPromise(Effect.either(
+      maintenanceConfigFromEnv({ MAINTENANCE_DELETE_CHUNK_SIZE: "0" })
+    ));
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("ValidationError");
+      expect(result.left.message).toContain("MAINTENANCE_DELETE_CHUNK_SIZE");
     }
   });
 });

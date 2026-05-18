@@ -44,11 +44,16 @@ function tenantConditions(table: TenantColumns, tenant: TenantScope) {
   ];
 }
 
+function daysAgoIso(days: number) {
+  return new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+}
+
 export async function queryDashboardStats(
   d1: D1Database,
   tenant: TenantScope = DEFAULT_TENANT_SCOPE
 ): Promise<DashboardStats> {
   const db = drizzle(d1);
+  const recentCutoff = daysAgoIso(14);
   const connectionWhere = and(...tenantConditions(connections, tenant));
   const spanWhere = and(
     ...tenantConditions(spans, tenant),
@@ -57,7 +62,7 @@ export async function queryDashboardStats(
   const eventWhere = and(...tenantConditions(events, tenant));
   const recentWhere = and(
     ...tenantConditions(connections, tenant),
-    sql`started_at > datetime('now', '-14 days')`
+    sql`${connections.started_at} > ${recentCutoff}`
   );
 
   const [[connSummary], serviceRows, typeRows, volumeByDay, latencyRows, [eventCount]] = await Promise.all([
@@ -149,7 +154,8 @@ export async function queryConnectionStats(
   const conditions = [...tenantConditions(connections, tenant), ...buildConnectionConditions(activeTags)];
   const where = and(...conditions);
 
-  const recentWhere = and(...conditions, sql`started_at > datetime('now', '-14 days')`);
+  const recentCutoff = daysAgoIso(14);
+  const recentWhere = and(...conditions, sql`${connections.started_at} > ${recentCutoff}`);
 
   const [[summary], typeRows, serviceRows, volumeByDay] = await Promise.all([
     db.select({

@@ -105,8 +105,8 @@ export function queryMetricSeries(
     const where = [
       "workspace_id = ?",
       "project_id = ?",
-      `datetime(${timeColumn}) >= datetime(?)`,
-      `datetime(${timeColumn}) <= datetime(?)`,
+      `${timeColumn} >= ?`,
+      `${timeColumn} <= ?`,
       ...extra.conditions,
     ].join(" AND ");
 

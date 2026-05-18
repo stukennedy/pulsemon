@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Effect, Either } from "effect";
 import { DatabaseError } from "@/lib/effect/errors";
 import { DEFAULT_INGEST_GOVERNANCE_CONFIG, type IngestGovernanceConfig } from "@/lib/effect/governance";
-import { postBatch, postConnection } from "@/lib/effect/ingest";
+import { postBatch, postConnection, postLogs } from "@/lib/effect/ingest";
 import type { ConnectionInsert, TelemetryBatchWrite, TelemetryRepository } from "@/lib/effect/repository";
 
 function createRepository(overrides: Partial<TelemetryRepository> = {}): TelemetryRepository {
@@ -121,6 +121,80 @@ describe("Effect ingest service", () => {
     if (Either.isLeft(result)) {
       expect(result.left._tag).toBe("ValidationError");
       expect(result.left.message).toBe("No valid records in batch");
+    }
+    expect(calls).toBe(0);
+  });
+
+  it("rejects direct D1 batches above the configured operation limit", async () => {
+    let calls = 0;
+    const repository = createRepository({
+      writeBatch: () => Effect.sync(() => {
+        calls += 1;
+      }),
+    });
+
+    const result = await Effect.runPromise(Effect.either(
+      postBatch({ ...deps(repository), maxBatchOperations: 1 }, {
+        logs: [
+          { service: "voice-gateway", level: "info", message: "first" },
+          { service: "voice-gateway", level: "info", message: "second" },
+        ],
+      })
+    ));
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("PayloadTooLargeError");
+      expect(result.left.message).toBe("Max 1 operations per batch");
+    }
+    expect(calls).toBe(0);
+  });
+
+  it("defaults direct D1 batches to a limit below the D1 per-invocation query cap", async () => {
+    let calls = 0;
+    const repository = createRepository({
+      writeBatch: () => Effect.sync(() => {
+        calls += 1;
+      }),
+    });
+
+    const logs = Array.from({ length: 251 }, (_, index) => ({
+      service: "voice-gateway",
+      level: "info",
+      message: `log ${index}`,
+    }));
+
+    const result = await Effect.runPromise(Effect.either(
+      postBatch(deps(repository), { logs })
+    ));
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("PayloadTooLargeError");
+      expect(result.left.message).toBe("Max 250 operations per batch");
+    }
+    expect(calls).toBe(0);
+  });
+
+  it("applies the direct D1 operation limit to signal array writes", async () => {
+    let calls = 0;
+    const repository = createRepository({
+      insertLogs: () => Effect.sync(() => {
+        calls += 1;
+      }),
+    });
+
+    const result = await Effect.runPromise(Effect.either(
+      postLogs({ ...deps(repository), requiredScope: "logs", maxBatchOperations: 1 }, [
+        { service: "voice-gateway", level: "info", message: "first" },
+        { service: "voice-gateway", level: "info", message: "second" },
+      ])
+    ));
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("PayloadTooLargeError");
+      expect(result.left.message).toBe("Max 1 operations per batch");
     }
     expect(calls).toBe(0);
   });

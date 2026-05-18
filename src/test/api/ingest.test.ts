@@ -397,4 +397,30 @@ describe("POST /api/ingest", () => {
     const body = await res.json() as { error: string };
     expect(body.error).toContain("service");
   });
+
+  it("reads the direct D1 batch operation limit from env", async () => {
+    ctx = createTestContext({
+      env: { INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS: "1" } as any,
+    });
+
+    const res = await ctx.request("/api/ingest/batch", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({
+        logs: [
+          { id: "limited-log-1", service: "voice-gateway", level: "info", message: "first" },
+          { id: "limited-log-2", service: "voice-gateway", level: "info", message: "second" },
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json() as { error: string };
+    expect(body.error).toBe("Max 1 operations per batch");
+
+    const row = ctx.sqlite
+      .prepare("SELECT COUNT(*) AS count FROM logs WHERE id LIKE 'limited-log-%'")
+      .get() as any;
+    expect(row.count).toBe(0);
+  });
 });

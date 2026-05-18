@@ -39,6 +39,16 @@ import { makeD1TelemetryRepository } from "@/lib/effect/repository";
 import { makeIngestPressureController } from "@/lib/effect/pressure";
 import { tenantScopeFromEnv } from "@/lib/tenant";
 
+type DirectD1IngestEnv = {
+  readonly INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS?: string;
+};
+
+function directD1BatchOperationLimit(env: Env & DirectD1IngestEnv) {
+  const raw = env.INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS;
+  if (raw === undefined || raw.trim() === "") return undefined;
+  return Number(raw);
+}
+
 function deps(c: Context<{ Bindings: Env }>, requiredScope: string): IngestDeps {
   const repository = makeD1TelemetryRepository(c.env.DB);
   return {
@@ -48,6 +58,7 @@ function deps(c: Context<{ Bindings: Env }>, requiredScope: string): IngestDeps 
     authorization: c.req.header("Authorization") ?? "",
     requiredScope,
     defaultTenant: tenantScopeFromEnv(c.env),
+    maxBatchOperations: directD1BatchOperationLimit(c.env),
     pressure: makeIngestPressureController(c.env.DB, c.env),
     governance: governanceConfigFromEnv(c.env),
     cardinality: makeIngestCardinalityController(c.env.DB, c.env),

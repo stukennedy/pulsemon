@@ -147,8 +147,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function windowModifier(minutes: number) {
-  return `-${minutes} minutes`;
+function windowCutoffIso(minutes: number) {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
 }
 
 function percentile(values: number[], p: number) {
@@ -213,8 +213,8 @@ function p95VoiceLatency(column: string) {
        WHERE workspace_id = ?
          AND project_id = ?
          AND ${column} IS NOT NULL
-         AND datetime(started_at) >= datetime('now', ?)`
-    ).bind(tenant.workspace_id, tenant.project_id, windowModifier(windowMinutes)).all<{ value: number }>();
+         AND started_at >= ?`
+    ).bind(tenant.workspace_id, tenant.project_id, windowCutoffIso(windowMinutes)).all<{ value: number }>();
 
     return percentile(result.results.map((row) => Number(row.value)).filter(Number.isFinite), 95);
   });
@@ -233,8 +233,8 @@ function rate(
        FROM ${table}
        WHERE workspace_id = ?
          AND project_id = ?
-         AND datetime(${timestampColumn}) >= datetime('now', ?)`
-    ).bind(tenant.workspace_id, tenant.project_id, windowModifier(windowMinutes)).first<{
+         AND ${timestampColumn} >= ?`
+    ).bind(tenant.workspace_id, tenant.project_id, windowCutoffIso(windowMinutes)).first<{
       total: number;
       matching: number | null;
     }>();
@@ -253,13 +253,13 @@ function metricAverage(definition: MonitorDefinition) {
       "workspace_id = ?",
       "project_id = ?",
       "metric_name = ?",
-      "datetime(timestamp) >= datetime('now', ?)",
+      "timestamp >= ?",
     ];
     const bindings: unknown[] = [
       tenant.workspace_id,
       tenant.project_id,
       definition.metric_name,
-      windowModifier(definition.window_minutes),
+      windowCutoffIso(definition.window_minutes),
     ];
     if (definition.service) {
       conditions.push("service = ?");

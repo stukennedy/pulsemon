@@ -65,8 +65,8 @@ function cleanString(value: string | undefined | null) {
   return trimmed && trimmed.length > 0 ? trimmed : undefined;
 }
 
-function windowModifier(minutes: number) {
-  return `-${minutes} minutes`;
+function windowCutoffIso(minutes: number) {
+  return new Date(Date.now() - minutes * 60_000).toISOString();
 }
 
 function definitionFromRow(row: SloDefinitionRecord): SloDefinition {
@@ -233,13 +233,13 @@ function evaluateDefinition(
       "workspace_id = ?",
       "project_id = ?",
       "metric_name = ?",
-      "datetime(timestamp) >= datetime('now', ?)",
+      "timestamp >= ?",
     ];
     const bindings: unknown[] = [
       tenant.workspace_id,
       tenant.project_id,
       definition.metric_name,
-      windowModifier(definition.window_minutes),
+      windowCutoffIso(definition.window_minutes),
     ];
     if (definition.service) {
       conditions.push("service = ?");
