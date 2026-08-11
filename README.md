@@ -643,3 +643,10 @@ bun run db:migrate     # Apply to D1
 Drizzle owns migration generation. The current migration history starts from a
 generated initial schema because no production database needed the old
 hand-written chain.
+
+## License
+
+Pulsemon is licensed under the [Apache License 2.0](LICENSE).
+
+Copyright 2026 Multiverse. Contributions are accepted under the same license
+per section 5 of the Apache 2.0 terms.
