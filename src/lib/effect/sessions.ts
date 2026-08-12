@@ -65,6 +65,116 @@ export function voiceSessionStatus(summary: VoiceSessionSummary) {
   return summaryStatus(summary);
 }
 
+export interface VoiceStageStats {
+  readonly stage: "asr" | "llm" | "tts" | "audio";
+  readonly samples: number;
+  readonly avg: number | null;
+  readonly p50: number | null;
+  readonly p95: number | null;
+}
+
+/**
+ * Per-stage latency stats computed from `voice_turns` — the voice pipeline's
+ * canonical record — NOT from spans. The previous voice header filtered spans
+ * whose operation starts with asr/llm/tts, a naming convention no ingest
+ * enforces; a producer reporting turns (the documented voice path) rendered
+ * "0 samples" forever while its data sat one table away.
+ *
+ * `audio` is release → first audible frame: the number the USER experiences
+ * as reply latency, and the one worth alerting on.
+ */
+export function queryVoiceStageStats(
+  db: D1Database,
+  tenant: TenantScope
+): Effect.Effect<VoiceStageStats[], DatabaseError> {
+  return dbEffect(async () => {
+    const result = await db.prepare(
+      `WITH stage_latency AS (
+         SELECT 'asr' AS stage, asr_latency_ms AS ms FROM voice_turns
+           WHERE workspace_id = ?1 AND project_id = ?2 AND asr_latency_ms IS NOT NULL
+         UNION ALL
+         SELECT 'llm', llm_latency_ms FROM voice_turns
+           WHERE workspace_id = ?1 AND project_id = ?2 AND llm_latency_ms IS NOT NULL
+         UNION ALL
+         SELECT 'tts', tts_latency_ms FROM voice_turns
+           WHERE workspace_id = ?1 AND project_id = ?2 AND tts_latency_ms IS NOT NULL
+         UNION ALL
+         SELECT 'audio', audio_latency_ms FROM voice_turns
+           WHERE workspace_id = ?1 AND project_id = ?2 AND audio_latency_ms IS NOT NULL
+       ),
+       ranked AS (
+         SELECT stage, ms,
+           ROW_NUMBER() OVER (PARTITION BY stage ORDER BY ms ASC) AS rn,
+           COUNT(*) OVER (PARTITION BY stage) AS total
+         FROM stage_latency
+       )
+       SELECT stage,
+         MAX(total) AS samples,
+         CAST(AVG(ms) AS INTEGER) AS avg,
+         MIN(CASE WHEN rn >= CAST(((total * 50) + 99) / 100 AS INTEGER) THEN ms END) AS p50,
+         MIN(CASE WHEN rn >= CAST(((total * 95) + 99) / 100 AS INTEGER) THEN ms END) AS p95
+       FROM ranked
+       GROUP BY stage`
+    ).bind(tenant.workspace_id, tenant.project_id).all<{
+      stage: VoiceStageStats["stage"];
+      samples: number;
+      avg: number | null;
+      p50: number | null;
+      p95: number | null;
+    }>();
+
+    const byStage = new Map(result.results.map((row) => [row.stage, row]));
+    // Always all four stages, in pipeline order — a stage with no data renders
+    // as "0 samples" rather than disappearing, which is what tells an operator
+    // their producer isn't reporting it.
+    return (["asr", "llm", "tts", "audio"] as const).map((stage) => {
+      const row = byStage.get(stage);
+      return {
+        stage,
+        samples: Number(row?.samples ?? 0),
+        avg: numberOrNull(row?.avg),
+        p50: numberOrNull(row?.p50),
+        p95: numberOrNull(row?.p95),
+      };
+    });
+  });
+}
+
+export interface RecentVoiceTurn {
+  readonly trace_id: string | null;
+  readonly session_id: string | null;
+  readonly role: string;
+  readonly started_at: string | null;
+  readonly asr_latency_ms: number | null;
+  readonly llm_latency_ms: number | null;
+  readonly tts_latency_ms: number | null;
+  readonly audio_latency_ms: number | null;
+  readonly duration_ms: number | null;
+  readonly interruption: number;
+  readonly state: string | null;
+}
+
+/** Most recent turns across sessions — the "recent pipelines" feed, one row
+ *  per turn, each linking back to its session. */
+export function queryRecentVoiceTurns(
+  db: D1Database,
+  tenant: TenantScope,
+  limit = 25
+): Effect.Effect<RecentVoiceTurn[], DatabaseError> {
+  return dbEffect(async () => {
+    const result = await db.prepare(
+      `SELECT trace_id, session_id, role, started_at,
+              asr_latency_ms, llm_latency_ms, tts_latency_ms, audio_latency_ms,
+              duration_ms, interruption, state
+       FROM voice_turns
+       WHERE workspace_id = ? AND project_id = ?
+       ORDER BY COALESCE(started_at, ended_at) DESC
+       LIMIT ?`
+    ).bind(tenant.workspace_id, tenant.project_id, limit).all<RecentVoiceTurn>();
+    return result.results;
+  });
+}
+
 export function queryVoiceSessionSummaries(
   db: D1Database,
   tenant: TenantScope,

@@ -68,6 +68,36 @@ export async function queryDashboardStats(
     sql`${connections.started_at} > ${recentCutoff}`
   );
 
+  // Voice stage percentiles from voice_turns — the canonical voice record.
+  // The span-derived categories below only cover producers that name spans
+  // `asr.*`/`llm.*`/`tts.*`; the documented voice ingest path reports TURNS,
+  // and without this merge the dashboard's voice cards read "—" forever while
+  // the data sits in voice_turns.
+  const voicePercentiles = d1.prepare(
+    `WITH stage_latency AS (
+       SELECT 'asr' AS category, asr_latency_ms AS ms FROM voice_turns
+         WHERE workspace_id = ?1 AND project_id = ?2 AND asr_latency_ms IS NOT NULL
+       UNION ALL
+       SELECT 'llm', llm_latency_ms FROM voice_turns
+         WHERE workspace_id = ?1 AND project_id = ?2 AND llm_latency_ms IS NOT NULL
+       UNION ALL
+       SELECT 'tts', tts_latency_ms FROM voice_turns
+         WHERE workspace_id = ?1 AND project_id = ?2 AND tts_latency_ms IS NOT NULL
+     ),
+     ranked AS (
+       SELECT category, ms,
+         ROW_NUMBER() OVER (PARTITION BY category ORDER BY ms ASC) AS rn,
+         COUNT(*) OVER (PARTITION BY category) AS total
+       FROM stage_latency
+     )
+     SELECT category,
+       MIN(CASE WHEN rn >= CAST(((total * 50) + 99) / 100 AS INTEGER) THEN ms END) AS p50,
+       MIN(CASE WHEN rn >= CAST(((total * 95) + 99) / 100 AS INTEGER) THEN ms END) AS p95,
+       MIN(CASE WHEN rn >= CAST(((total * 99) + 99) / 100 AS INTEGER) THEN ms END) AS p99
+     FROM ranked
+     GROUP BY category`
+  ).bind(tenant.workspace_id, tenant.project_id).all<LatencyPercentileRow>();
+
   const latencyPercentiles = d1.prepare(
     `WITH span_latency AS (
        SELECT
@@ -98,7 +128,7 @@ export async function queryDashboardStats(
      GROUP BY category`
   ).bind(tenant.workspace_id, tenant.project_id).all<LatencyPercentileRow>();
 
-  const [[connSummary], serviceRows, typeRows, volumeByDay, latencyRows, [eventCount]] = await Promise.all([
+  const [[connSummary], serviceRows, typeRows, volumeByDay, latencyRows, voiceLatencyRows, [eventCount]] = await Promise.all([
     db.select({
       total: count(),
       active: sql<number>`COUNT(CASE WHEN status = 'active' THEN 1 END)`,
@@ -127,6 +157,8 @@ export async function queryDashboardStats(
 
     latencyPercentiles,
 
+    voicePercentiles,
+
     db.select({ count: count() }).from(events).where(eventWhere),
   ]);
 
@@ -137,6 +169,13 @@ export async function queryDashboardStats(
     p50[row.category] = Number(row.p50 ?? 0);
     p95[row.category] = Number(row.p95 ?? 0);
     p99[row.category] = Number(row.p99 ?? 0);
+  }
+  // voice_turns wins where both exist: it is per-turn truth, while a span
+  // named `llm.generate` may be a coarser or duplicated view of the same call.
+  for (const row of voiceLatencyRows.results) {
+    if (row.p50 !== null) p50[row.category] = Number(row.p50);
+    if (row.p95 !== null) p95[row.category] = Number(row.p95);
+    if (row.p99 !== null) p99[row.category] = Number(row.p99);
   }
 
   const total = connSummary.total || 1;
