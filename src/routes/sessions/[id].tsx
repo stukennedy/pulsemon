@@ -3,13 +3,14 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import { Nav } from "@/components/Nav";
-import { VoiceSessionDetailView } from "@/components/VoiceSessions";
+import { VoiceSessionDetailView, type SessionDetailTab } from "@/components/VoiceSessions";
 import { errorStatus } from "@/lib/effect/errors";
 import { getRealtimeSession } from "@/lib/effect/sessions";
 import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const sessionId = c.req.param("id");
+  const tab: SessionDetailTab = c.req.query("view") === "activity" ? "activity" : "turns";
   const result = await Effect.runPromise(Effect.either(
     getRealtimeSession(c.env.DB, tenantScopeFromEnv(c.env), sessionId)
   ));
@@ -25,7 +26,7 @@ export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
       <div class="mb-4">
         <a href="/voice" class="text-xs font-mono text-cyan-400 hover:text-cyan-300">← Back to voice</a>
       </div>
-      <VoiceSessionDetailView detail={result.right} sessionId={sessionId} />
+      <VoiceSessionDetailView detail={result.right} sessionId={sessionId} tab={tab} />
     </main>
   );
 };
