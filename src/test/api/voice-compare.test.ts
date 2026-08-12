@@ -20,7 +20,7 @@ describe("GET /voice/compare", () => {
       ctx.seedVoiceTurn({ session_id: "session-steady", started_at: now, llm_latency_ms: 1000 });
     }
 
-    const res = await ctx.request("/voice/compare?a=session-slow&b=baseline&days=7");
+    const res = await ctx.request("/voice/compare?a=session-slow&reference=baseline&days=7");
 
     expect(res.status).toBe(200);
     const html = await res.text();
@@ -35,12 +35,25 @@ describe("GET /voice/compare", () => {
     ctx.seedVoiceTurn({ session_id: "session-a", started_at: now, llm_latency_ms: 900 });
     ctx.seedVoiceTurn({ session_id: "session-b", started_at: now, llm_latency_ms: 800 });
 
-    const res = await ctx.request("/voice/compare?a=session-a&b=session-b");
+    const res = await ctx.request("/voice/compare?a=session-a&reference=session%3Asession-b");
 
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("session session-a");
     expect(html).toContain("session session-b");
+  });
+
+  it("can compare against a session whose id is baseline", async () => {
+    const ctx = createTestContext();
+    const now = new Date().toISOString();
+    ctx.seedVoiceTurn({ session_id: "session-a", started_at: now, llm_latency_ms: 900 });
+    ctx.seedVoiceTurn({ session_id: "baseline", started_at: now, llm_latency_ms: 800 });
+
+    const res = await ctx.request("/voice/compare?a=session-a&reference=session%3Abaseline");
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("session baseline");
   });
 
   it("returns 404 for an unknown candidate session", async () => {
@@ -52,7 +65,7 @@ describe("GET /voice/compare", () => {
   it("returns 400 for an out-of-range baseline window", async () => {
     const ctx = createTestContext();
     ctx.seedVoiceTurn({ session_id: "session-a" });
-    const res = await ctx.request("/voice/compare?a=session-a&b=baseline&days=900");
+    const res = await ctx.request("/voice/compare?a=session-a&reference=baseline&days=900");
     expect(res.status).toBe(400);
   });
 });

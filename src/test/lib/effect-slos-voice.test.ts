@@ -20,11 +20,55 @@ describe("voice SLO sources", () => {
 });
 
 describe("Effect voice SLO evaluation", () => {
+  it("keeps existing reserved-name definitions backed by metrics", async () => {
+    const ctx = createTestContext();
+    const timestamp = new Date().toISOString();
+
+    await ctx.d1.prepare(
+      `INSERT INTO slo_definitions (
+        id, workspace_id, project_id, name, metric_name, service,
+        objective_percent, threshold, window_minutes, enabled, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      "slo.existing-reserved-name",
+      DEFAULT_TENANT_SCOPE.workspace_id,
+      DEFAULT_TENANT_SCOPE.project_id,
+      "Existing metric objective",
+      "voice.turns.audio_latency_ms",
+      "voice-gateway",
+      95,
+      1500,
+      60,
+      1,
+      timestamp,
+      timestamp
+    ).run();
+    ctx.seedMetric({
+      metric_name: "voice.turns.audio_latency_ms",
+      service: "voice-gateway",
+      timestamp,
+      value: 1000,
+    });
+    ctx.seedMetric({
+      metric_name: "voice.turns.audio_latency_ms",
+      service: "other-service",
+      timestamp,
+      value: 9000,
+    });
+    ctx.seedVoiceTurn({ started_at: timestamp, audio_latency_ms: 9000 });
+
+    const result = await Effect.runPromise(evaluateAndPersistSlos(ctx.d1, DEFAULT_TENANT_SCOPE));
+    const evaluation = result.evaluations.find((item) => item.slo_id === "slo.existing-reserved-name");
+
+    expect(evaluation?.total_events).toBe(1);
+    expect(evaluation?.good_events).toBe(1);
+  });
+
   it("evaluates latency objectives from voice_turns, ignoring turns without the stage", async () => {
     const ctx = createTestContext();
     const timestamp = new Date().toISOString();
 
-    // 3 turns recorded release→audible latency: 800ms, 1200ms good; 2000ms bad.
+    // 3 turns recorded release-to-audible latency: 800ms, 1200ms good; 2000ms bad.
     ctx.seedVoiceTurn({ session_id: "s1", started_at: timestamp, audio_latency_ms: 800 });
     ctx.seedVoiceTurn({ session_id: "s1", started_at: timestamp, audio_latency_ms: 1200 });
     ctx.seedVoiceTurn({ session_id: "s1", started_at: timestamp, audio_latency_ms: 2000 });
@@ -37,6 +81,20 @@ describe("Effect voice SLO evaluation", () => {
     expect(evaluation?.total_events).toBe(3);
     expect(evaluation?.good_events).toBe(2);
     expect(evaluation?.attainment_percent).toBeCloseTo((2 / 3) * 100);
+  });
+
+  it("ignores historical negative voice latency samples", async () => {
+    const ctx = createTestContext();
+    const timestamp = new Date().toISOString();
+
+    ctx.seedVoiceTurn({ started_at: timestamp, audio_latency_ms: 1200 });
+    ctx.seedVoiceTurn({ started_at: timestamp, audio_latency_ms: -1 });
+
+    const result = await Effect.runPromise(evaluateAndPersistSlos(ctx.d1, DEFAULT_TENANT_SCOPE));
+    const evaluation = result.evaluations.find((item) => item.slo_id === "slo.voice_reply_audible");
+
+    expect(evaluation?.total_events).toBe(1);
+    expect(evaluation?.good_events).toBe(1);
   });
 
   it("evaluates the interruption flag objective across all turns", async () => {
@@ -79,6 +137,7 @@ describe("Effect voice SLO evaluation", () => {
       id: "slo.voice-window",
       name: "Recent audio latency",
       metric_name: "voice.turns.audio_latency_ms",
+      source: "voice",
       objective_percent: 95,
       threshold: 1500,
       window_minutes: 15,
@@ -122,6 +181,7 @@ describe("Effect voice SLO evaluation", () => {
     const result = await Effect.runPromise(Effect.either(createSloDefinition(ctx.d1, DEFAULT_TENANT_SCOPE, {
       name: "Voice with service",
       metric_name: "voice.turns.llm_latency_ms",
+      source: "voice",
       service: "voice-gateway",
       objective_percent: 95,
       threshold: 3000,

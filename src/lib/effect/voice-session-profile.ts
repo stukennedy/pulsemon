@@ -5,7 +5,7 @@
  * candidate session and a reference (another session, or a rolling baseline
  * built from recent turns), compute per-stage percentiles and classify each
  * metric as regressed / improved / flat. All D1 access lives in
- * `src/lib/effect/session-compare.ts`; this module is deliberately free of IO
+ * `session-compare.ts`; this module is deliberately free of IO
  * so the verdict rules can be tested exhaustively.
  */
 
@@ -14,21 +14,24 @@ export type StageKey = "audio" | "asr" | "llm" | "tts";
 export const STAGE_KEYS: readonly StageKey[] = ["audio", "asr", "llm", "tts"];
 
 export const STAGE_LABELS: Record<StageKey, string> = {
-  audio: "Release → audible reply",
+  audio: "Release to audible reply",
   asr: "ASR transcription",
   llm: "LLM response",
   tts: "TTS synthesis",
 };
 
 /** The subset of a voice_turns row the comparison needs. */
-export interface TurnLatencySample {
-  readonly audio_latency_ms: number | null;
-  readonly asr_latency_ms: number | null;
-  readonly llm_latency_ms: number | null;
-  readonly tts_latency_ms: number | null;
-  readonly interruption: number;
-  readonly cost_usd: number | null;
-}
+import type { VoiceTurn } from "@/db/schema";
+
+export type TurnLatencySample = Pick<
+  VoiceTurn,
+  | "audio_latency_ms"
+  | "asr_latency_ms"
+  | "llm_latency_ms"
+  | "tts_latency_ms"
+  | "interruption"
+  | "cost_usd"
+>;
 
 export interface StageStats {
   /** Turns that actually recorded this stage. */
@@ -76,7 +79,7 @@ const STAGE_COLUMNS: Record<StageKey, keyof TurnLatencySample> = {
  * regression, and neither is +12% on a metric that moved by 3ms. A change must
  * clear BOTH the absolute floor for its unit and (for ms/usd) a 10% relative
  * move before it earns a verdict. Percentage-point metrics use the absolute
- * floor only — relative change on a near-zero rate is meaningless.
+ * floor only; relative change on a near-zero rate is meaningless.
  */
 const ABSOLUTE_FLOOR: Record<CompareUnit, number> = {
   ms: 25,
@@ -98,7 +101,9 @@ export function percentile(values: readonly number[], p: number): number | null 
 function stageStats(samples: readonly TurnLatencySample[], stage: StageKey): StageStats {
   const values = samples
     .map((sample) => sample[STAGE_COLUMNS[stage]])
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+    .filter((value): value is number => (
+      typeof value === "number" && Number.isFinite(value) && value >= 0
+    ));
 
   return {
     count: values.length,

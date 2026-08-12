@@ -17,7 +17,7 @@ route handlers and scheduled jobs invoke.
   read-side query services.
 - `monitors.ts`, `alerts.ts`, `slos.ts`, `voice-slo.ts`, `maintenance.ts`,
   `audit.ts`: operator workflows and scheduled/admin behaviors (`voice-slo.ts`
-  is the reserved-metric-name registry that routes SLOs to voice telemetry).
+  is the registry used by explicitly voice-sourced SLO definitions).
 - `auth.ts`: ingest API key and scope authorization.
 
 ## Service Shape

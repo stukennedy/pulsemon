@@ -6,10 +6,10 @@ import { Nav } from "@/components/Nav";
 import { VoiceCompareView } from "@/components/VoiceCompare";
 import { errorStatus } from "@/lib/effect/errors";
 import {
-  BASELINE_KEY,
+  BASELINE_REFERENCE_VALUE,
   compareVoiceSessions,
   DEFAULT_BASELINE_DAYS,
-  type CompareReference,
+  parseCompareReference,
   type VoiceSessionComparison,
 } from "@/lib/effect/session-compare";
 import { queryVoiceSessionSummaries } from "@/lib/effect/sessions";
@@ -18,20 +18,19 @@ import { tenantScopeFromEnv } from "@/lib/tenant";
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const tenant = tenantScopeFromEnv(c.env);
   const candidateId = c.req.query("a")?.trim() ?? "";
-  const referenceId = c.req.query("b")?.trim() || BASELINE_KEY;
+  const referenceValue = c.req.query("reference")?.trim() || BASELINE_REFERENCE_VALUE;
   // Range validation happens in the service; the route only parses.
   const days = Number(c.req.query("days") ?? DEFAULT_BASELINE_DAYS);
 
-  const reference: CompareReference = referenceId === BASELINE_KEY
-    ? { kind: "baseline", days }
-    : { kind: "session", session_id: referenceId };
-
-  const result = await Effect.runPromise(Effect.either(Effect.all({
-    sessions: queryVoiceSessionSummaries(c.env.DB, tenant, 100),
-    comparison: candidateId
-      ? compareVoiceSessions(c.env.DB, tenant, candidateId, reference)
-      : Effect.succeed<VoiceSessionComparison | null>(null),
-  }, { concurrency: 2 })));
+  const result = await Effect.runPromise(Effect.either(Effect.gen(function* () {
+    const reference = yield* parseCompareReference(referenceValue, days);
+    return yield* Effect.all({
+      sessions: queryVoiceSessionSummaries(c.env.DB, tenant, 100),
+      comparison: candidateId
+        ? compareVoiceSessions(c.env.DB, tenant, candidateId, reference)
+        : Effect.succeed<VoiceSessionComparison | null>(null),
+    }, { concurrency: 2 });
+  })));
 
   if (Either.isLeft(result)) {
     const error = result.left;
@@ -44,7 +43,7 @@ export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
       <VoiceCompareView
         sessions={result.right.sessions}
         candidateId={candidateId}
-        referenceId={referenceId}
+        referenceValue={referenceValue}
         baselineDays={Number.isFinite(days) ? days : DEFAULT_BASELINE_DAYS}
         comparison={result.right.comparison}
       />

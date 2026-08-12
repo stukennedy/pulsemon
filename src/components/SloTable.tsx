@@ -1,6 +1,5 @@
 import type { FC } from "hono/jsx";
 import type { SloDefinition, SloEvaluation } from "@/lib/effect/slos";
-import { VOICE_SLO_SOURCES } from "@/lib/effect/voice-slo";
 
 const FIELD_STYLE = "width:100%;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.18);border-radius:6px;color:#e2e8f0;padding:9px 10px;font-size:12px";
 
@@ -18,7 +17,8 @@ function statusColor(evaluation: SloEvaluation) {
 export const SloView: FC<{
   definitions: readonly SloDefinition[];
   evaluations: readonly SloEvaluation[];
-}> = ({ definitions, evaluations }) => (
+  voiceMetricSuggestions: readonly { value: string; label: string }[];
+}> = ({ definitions, evaluations, voiceMetricSuggestions }) => (
   <div class="space-y-4 fade-in">
     <section
       class="p-4"
@@ -31,10 +31,14 @@ export const SloView: FC<{
 
       <form method="post" action="/slos" class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
         <input name="name" placeholder="SLO name" required style={FIELD_STYLE} />
+        <select name="source" required style={FIELD_STYLE}>
+          <option value="metrics" selected>Metrics</option>
+          <option value="voice">Voice telemetry</option>
+        </select>
         <input name="metric_name" placeholder="Metric name" list="slo-metric-suggestions" required style={FIELD_STYLE} />
         <datalist id="slo-metric-suggestions">
-          {VOICE_SLO_SOURCES.map((source) => (
-            <option value={source.metric_name}>{source.label}</option>
+          {voiceMetricSuggestions.map((suggestion) => (
+            <option value={suggestion.value}>{suggestion.label}</option>
           ))}
         </datalist>
         <input name="service" placeholder="Service filter" style={FIELD_STYLE} />
@@ -50,7 +54,7 @@ export const SloView: FC<{
         </button>
       </form>
       <p class="text-[11px] font-mono mt-2" style="color:#64748b">
-        voice.turns.* and voice.tools.* objectives are computed from voice-turn telemetry (good event = value ≤ threshold; use threshold 0 for the interruption/error flags). Other metric names evaluate against the metrics table.
+        Choose Voice telemetry for the suggested voice.turns.* and voice.tools.* objectives (good event = value &lt;= threshold; use threshold 0 for interruption/error flags). Metrics always evaluates the named metric, even when its name overlaps a voice suggestion.
       </p>
     </section>
 
@@ -64,7 +68,7 @@ export const SloView: FC<{
             <div>
               <h3 class="text-sm font-mono" style="color:#e2e8f0">{evaluation.name}</h3>
               <div class="text-[11px] font-mono mt-1" style="color:#64748b">
-                {evaluation.total_events.toLocaleString()} events · {evaluation.window_minutes}m
+                {evaluation.total_events.toLocaleString()} events | {evaluation.window_minutes}m
               </div>
             </div>
             <div class="text-right">

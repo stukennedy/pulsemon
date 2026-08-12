@@ -1,16 +1,19 @@
 import { Effect } from "effect";
+import type { VoiceTurn } from "@/db/schema";
 import type { TenantScope } from "@/types";
 import {
   buildVoiceSessionProfile,
   compareVoiceSessionProfiles,
+  countRegressions,
   type CompareRow,
+  type TurnLatencySample,
   type VoiceSessionProfile,
-} from "@/lib/session-compare";
+} from "@/lib/effect/voice-session-profile";
 import { DatabaseError, NotFoundError, ValidationError } from "./errors";
 
 /**
  * Read-side queries for the voice session compare view. Profile math lives in
- * `src/lib/session-compare.ts`; this module only fetches bounded, tenant-scoped
+ * `voice-session-profile.ts`; this module only fetches bounded, tenant-scoped
  * turn samples and hands them over.
  */
 
@@ -18,37 +21,49 @@ import { DatabaseError, NotFoundError, ValidationError } from "./errors";
 // synthetic load-test id) must not pull the whole table into memory.
 const MAX_SESSION_TURNS = 2000;
 
-// The baseline aggregates many sessions, so it gets a larger — but still
-// hard — cap on top of its recency window.
+// The baseline aggregates many sessions, so it gets a larger, but still
+// hard, cap on top of its recency window.
 const MAX_BASELINE_TURNS = 5000;
 
 export const DEFAULT_BASELINE_DAYS = 7;
 export const MAX_BASELINE_DAYS = 30;
 
 export const BASELINE_KEY = "baseline";
+export const BASELINE_REFERENCE_VALUE = "baseline";
+export const SESSION_REFERENCE_PREFIX = "session:";
 
 /** Columns handed to buildVoiceSessionProfile; keep in sync with TurnLatencySample. */
 const SAMPLE_COLUMNS =
   "audio_latency_ms, asr_latency_ms, llm_latency_ms, tts_latency_ms, interruption, cost_usd";
 
-interface TurnSampleRow {
-  audio_latency_ms: number | null;
-  asr_latency_ms: number | null;
-  llm_latency_ms: number | null;
-  tts_latency_ms: number | null;
-  interruption: number;
-  cost_usd: number | null;
-}
+type TurnSampleRow = Pick<VoiceTurn, keyof TurnLatencySample>;
 
 /** Reference side of a comparison: a concrete session, or a rolling baseline. */
 export type CompareReference =
   | { readonly kind: "session"; readonly session_id: string }
   | { readonly kind: "baseline"; readonly days: number };
 
+export function parseCompareReference(
+  value: string,
+  days: number
+): Effect.Effect<CompareReference, ValidationError> {
+  if (value === BASELINE_REFERENCE_VALUE) {
+    return Effect.succeed({ kind: "baseline", days });
+  }
+  if (value.startsWith(SESSION_REFERENCE_PREFIX)) {
+    const sessionId = value.slice(SESSION_REFERENCE_PREFIX.length).trim();
+    if (sessionId.length > 0) {
+      return Effect.succeed({ kind: "session", session_id: sessionId });
+    }
+  }
+  return Effect.fail(new ValidationError({ message: "reference must be baseline or session:<id>" }));
+}
+
 export interface VoiceSessionComparison {
   readonly candidate: VoiceSessionProfile;
   readonly reference: VoiceSessionProfile | null;
   readonly rows: CompareRow[];
+  readonly regressionCount: number;
 }
 
 function messageFromUnknown(error: unknown): string {
@@ -93,7 +108,7 @@ export function getVoiceSessionProfile(
 
 export interface BaselineOptions {
   readonly days: number;
-  /** Sessions to leave out — normally the candidate, so it can't dilute its own baseline. */
+  /** Sessions to leave out, normally the candidate, so it cannot dilute its own baseline. */
   readonly excludeSessionIds?: readonly string[];
 }
 
@@ -187,10 +202,12 @@ export function compareVoiceSessions(
       });
     }
 
+    const rows = compareVoiceSessionProfiles(candidate, referenceProfile);
     return {
       candidate,
       reference: referenceProfile,
-      rows: compareVoiceSessionProfiles(candidate, referenceProfile),
+      rows,
+      regressionCount: countRegressions(rows),
     };
   });
 }

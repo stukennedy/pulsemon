@@ -5,7 +5,7 @@ import {
   countRegressions,
   percentile,
   type TurnLatencySample,
-} from "@/lib/session-compare";
+} from "@/lib/effect/voice-session-profile";
 
 function sample(overrides: Partial<TurnLatencySample> = {}): TurnLatencySample {
   return {
@@ -50,6 +50,17 @@ describe("buildVoiceSessionProfile", () => {
     expect(profile.interruptionRatePct).toBeCloseTo(100 / 3);
     expect(profile.totalCostUsd).toBeCloseTo(0.04);
     expect(profile.costPerTurnUsd).toBeCloseTo(0.04 / 3);
+  });
+
+  it("ignores historical negative latency samples", () => {
+    const profile = buildVoiceSessionProfile("s1", "session s1", [
+      sample({ llm_latency_ms: -1 }),
+      sample({ llm_latency_ms: 800 }),
+    ]);
+
+    expect(profile.stages.llm.count).toBe(1);
+    expect(profile.stages.llm.p50).toBe(800);
+    expect(profile.stages.llm.p95).toBe(800);
   });
 
   it("returns null rates for an empty session", () => {

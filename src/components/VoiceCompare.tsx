@@ -1,12 +1,16 @@
 import type { FC } from "hono/jsx";
 import type { VoiceSessionSummary } from "@/lib/effect/sessions";
-import type { VoiceSessionComparison } from "@/lib/effect/session-compare";
-import { countRegressions, type CompareRow, type CompareVerdict } from "@/lib/session-compare";
+import {
+  BASELINE_REFERENCE_VALUE,
+  SESSION_REFERENCE_PREFIX,
+  type VoiceSessionComparison,
+} from "@/lib/effect/session-compare";
+import type { CompareRow, CompareVerdict } from "@/lib/effect/voice-session-profile";
 
 const FIELD_STYLE = "width:100%;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.18);border-radius:6px;color:#e2e8f0;padding:9px 10px;font-size:12px";
 
 function formatValue(value: number | null, unit: CompareRow["unit"]) {
-  if (value === null) return "—";
+  if (value === null) return "-";
   switch (unit) {
     case "ms":
       return value < 1000 ? `${Math.round(value)}ms` : `${(value / 1000).toFixed(2)}s`;
@@ -20,9 +24,9 @@ function formatValue(value: number | null, unit: CompareRow["unit"]) {
 }
 
 function formatDelta(row: CompareRow) {
-  if (row.candidate === null || row.reference === null) return "—";
+  if (row.candidate === null || row.reference === null) return "-";
   const delta = row.candidate - row.reference;
-  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "±";
+  const sign = delta > 0 ? "+" : delta < 0 ? "-" : "+/-";
   const absolute = `${sign}${formatValue(Math.abs(delta), row.unit)}`;
   return row.deltaPct === null
     ? absolute
@@ -47,18 +51,16 @@ const VerdictBadge: FC<{ verdict: CompareVerdict }> = ({ verdict }) => (
 
 function sessionOptionLabel(session: VoiceSessionSummary) {
   const day = session.last_seen_at ? session.last_seen_at.slice(0, 10) : "";
-  return `${session.session_id} · ${session.turn_count} turns · ${day}`;
+  return `${session.session_id} | ${session.turn_count} turns | ${day}`;
 }
 
 export const VoiceCompareView: FC<{
   sessions: VoiceSessionSummary[];
   candidateId: string;
-  referenceId: string;
+  referenceValue: string;
   baselineDays: number;
   comparison: VoiceSessionComparison | null;
-}> = ({ sessions, candidateId, referenceId, baselineDays, comparison }) => {
-  const regressions = comparison ? countRegressions(comparison.rows) : 0;
-
+}> = ({ sessions, candidateId, referenceValue, baselineDays, comparison }) => {
   return (
     <div class="space-y-4 fade-in">
       <section
@@ -76,7 +78,7 @@ export const VoiceCompareView: FC<{
           <label class="block">
             <span class="text-[10px] font-mono uppercase" style="color:#64748b">Candidate session</span>
             <select name="a" required style={FIELD_STYLE} class="mt-1">
-              <option value="" selected={candidateId === ""}>Select a session…</option>
+              <option value="" selected={candidateId === ""}>Select a session...</option>
               {sessions.map((session) => (
                 <option value={session.session_id} selected={session.session_id === candidateId}>
                   {sessionOptionLabel(session)}
@@ -86,13 +88,21 @@ export const VoiceCompareView: FC<{
           </label>
           <label class="block">
             <span class="text-[10px] font-mono uppercase" style="color:#64748b">Reference</span>
-            <select name="b" style={FIELD_STYLE} class="mt-1">
-              <option value="baseline" selected={referenceId === "baseline"}>Rolling baseline</option>
-              {sessions.map((session) => (
-                <option value={session.session_id} selected={session.session_id === referenceId}>
-                  {sessionOptionLabel(session)}
-                </option>
-              ))}
+            <select name="reference" style={FIELD_STYLE} class="mt-1">
+              <option
+                value={BASELINE_REFERENCE_VALUE}
+                selected={referenceValue === BASELINE_REFERENCE_VALUE}
+              >
+                Rolling baseline
+              </option>
+              {sessions.map((session) => {
+                const value = `${SESSION_REFERENCE_PREFIX}${session.session_id}`;
+                return (
+                  <option value={value} selected={value === referenceValue}>
+                    {sessionOptionLabel(session)}
+                  </option>
+                );
+              })}
             </select>
           </label>
           <label class="block">
@@ -123,7 +133,7 @@ export const VoiceCompareView: FC<{
           </div>
           <div class="stat-card">
             <div class="stat-label">Regressions</div>
-            <div class="stat-value" style={regressions > 0 ? "color:#fb7185" : "color:#34d399"}>{regressions}</div>
+            <div class="stat-value" style={comparison.regressionCount > 0 ? "color:#fb7185" : "color:#34d399"}>{comparison.regressionCount}</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">Reference</div>
@@ -142,10 +152,11 @@ export const VoiceCompareView: FC<{
               {comparison.candidate.label} vs {comparison.reference?.label ?? "no reference data"}
             </span>
           </div>
-          <table class="w-full text-sm">
+          <div class="overflow-x-auto">
+          <table class="w-full min-w-[720px] text-sm">
             <thead>
               <tr style="border-bottom:1px solid rgba(255,255,255,0.06)">
-                {["Metric", "Candidate", "Reference", "Δ", "Verdict"].map((h) => (
+                {["Metric", "Candidate", "Reference", "Delta", "Verdict"].map((h) => (
                   <th
                     class={`px-4 py-2 ${h === "Metric" ? "text-left" : "text-right"}`}
                     style="font-size:10px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;color:#374151;font-family:'IBM Plex Mono',monospace"
@@ -174,6 +185,7 @@ export const VoiceCompareView: FC<{
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : (
         <div

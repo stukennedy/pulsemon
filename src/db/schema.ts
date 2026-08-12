@@ -347,6 +347,7 @@ export const slo_definitions = sqliteTable("slo_definitions", {
   project_id: text("project_id").notNull(),
   name: text("name").notNull(),
   metric_name: text("metric_name").notNull(),
+  source: text("source", { enum: ["metrics", "voice"] }).notNull().default("metrics"),
   service: text("service"),
   objective_percent: real("objective_percent").notNull(),
   threshold: real("threshold").notNull(),

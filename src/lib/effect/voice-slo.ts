@@ -3,22 +3,24 @@
  *
  * The SLO machinery in `slos.ts` is deliberately narrow: an SLO is "at least
  * `objective_percent` of events in the window have `value <= threshold`",
- * evaluated against the `metrics` table by `metric_name`. That framing also
- * fits voice-turn telemetry perfectly — "p95 release→audible reply under
- * 1.5s" is exactly "95% of turns have audio_latency_ms <= 1500" — so instead
+ * evaluated against an explicitly selected source. That framing fits
+ * voice-turn telemetry perfectly: "p95 release-to-audible reply under
+ * 1.5s" is exactly "95% of turns have audio_latency_ms <= 1500". Instead
  * of inventing a parallel voice-SLO system (a second definitions table, a
- * second evaluator, a second UI), we reserve a `voice.turns.*` /
- * `voice.tools.*` metric-name namespace and route those definitions to
- * `voice_turns` / `agent_tool_calls` at evaluation time.
+ * second evaluator, a second UI), voice-sourced definitions select a metric
+ * from this registry and evaluate it from `voice_turns` or
+ * `agent_tool_calls`. Metrics-sourced definitions always retain their
+ * existing metrics-table semantics, even when their name overlaps a registry
+ * entry.
  *
  * Every SQL fragment below is a hard-coded constant selected by exact
- * metric-name match. Nothing user-supplied is ever interpolated into SQL —
+ * metric-name match. Nothing user-supplied is ever interpolated into SQL;
  * thresholds, tenant ids, and window cutoffs are always bound parameters in
  * the evaluator.
  */
 
 export interface VoiceSloSource {
-  /** Reserved metric name that selects this source in an SLO definition. */
+  /** Registry metric name available to voice-sourced SLO definitions. */
   readonly metric_name: string;
   /** Operator-facing label used for UI hints. */
   readonly label: string;
@@ -26,14 +28,13 @@ export interface VoiceSloSource {
   readonly table: "voice_turns" | "agent_tool_calls";
   /**
    * SQL expression producing the per-event value compared against the SLO
-   * threshold (good event ⇔ value <= threshold). Constant, never user input.
+   * threshold (a good event has value <= threshold). Constant, never user input.
    */
   readonly valueSql: string;
   /**
    * Extra WHERE fragment selecting eligible events, or null for all rows.
-   * Latency sources only count turns that actually recorded the stage —
-   * otherwise every user turn without a synthesis latency would count as a
-   * violation and drown the signal.
+   * Latency sources only count non-negative samples that recorded the stage;
+   * this also excludes historical invalid sentinel values.
    */
   readonly eligibleSql: string | null;
   /** How thresholds read for this source ("ms" latency vs 0/1 "flag"). */
@@ -47,7 +48,7 @@ function latencySource(column: string, label: string, description: string): Voic
     label,
     table: "voice_turns",
     valueSql: column,
-    eligibleSql: `${column} IS NOT NULL`,
+    eligibleSql: `${column} >= 0`,
     unit: "ms",
     description,
   };
@@ -56,7 +57,7 @@ function latencySource(column: string, label: string, description: string): Voic
 export const VOICE_SLO_SOURCES: readonly VoiceSloSource[] = [
   latencySource(
     "audio_latency_ms",
-    "Release → audible reply",
+    "Release to audible reply",
     "Share of turns where the caller heard the reply within the threshold (ms)."
   ),
   latencySource(
@@ -80,7 +81,7 @@ export const VOICE_SLO_SOURCES: readonly VoiceSloSource[] = [
     table: "voice_turns",
     // interruption is a 0/1 flag, so with threshold 0 a "good" event is an
     // uninterrupted turn and the objective bounds the interruption rate:
-    // objective 95% ⇔ at most 5% of turns interrupted.
+    // objective 95% means at most 5% of turns interrupted.
     valueSql: "interruption",
     eligibleSql: null,
     unit: "flag",
@@ -104,8 +105,8 @@ const SOURCES_BY_METRIC_NAME = new Map(
 );
 
 /**
- * Resolve a reserved voice metric name to its source, or undefined when the
- * definition should evaluate against the `metrics` table as before.
+ * Resolve a voice-registry metric name. The caller must separately check the
+ * definition's explicit source discriminator before using this result.
  */
 export function resolveVoiceSloSource(metricName: string): VoiceSloSource | undefined {
   return SOURCES_BY_METRIC_NAME.get(metricName);

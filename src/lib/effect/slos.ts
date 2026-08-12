@@ -12,6 +12,7 @@ export interface SloDefinitionInput {
   readonly id?: string;
   readonly name: string;
   readonly metric_name: string;
+  readonly source?: string;
   readonly service?: string;
   readonly objective_percent: number;
   readonly threshold: number;
@@ -34,21 +35,22 @@ const DEFAULT_SLOS: readonly Omit<
     id: "slo.voice_latency",
     name: "Voice latency under 1.5s",
     metric_name: "voice.latency_ms",
+    source: "metrics",
     service: null,
     objective_percent: 99,
     threshold: 1500,
     window_minutes: 1440,
     enabled: true,
   },
-  // Voice presets computed straight from voice_turns / agent_tool_calls via
-  // the reserved metric-name namespace in voice-slo.ts — no instrumentation
-  // has to emit a separate metric for these to work.
+  // Voice presets explicitly select voice telemetry. Existing definitions
+  // default to metrics even if their metric name matches this registry.
   {
     id: "slo.voice_reply_audible",
     // "95% of turns audible within 1.5s" is the ratio framing of
-    // "p95 release→audible reply under 1.5s".
+    // "p95 release-to-audible reply under 1.5s".
     name: "Voice reply audible within 1.5s",
     metric_name: "voice.turns.audio_latency_ms",
+    source: "voice",
     service: null,
     objective_percent: 95,
     threshold: 1500,
@@ -61,6 +63,7 @@ const DEFAULT_SLOS: readonly Omit<
     // uninterrupted turn, so objective 95% caps the interruption rate at 5%.
     name: "Voice turns without interruption",
     metric_name: "voice.turns.interruption",
+    source: "voice",
     service: null,
     objective_percent: 95,
     threshold: 0,
@@ -73,6 +76,7 @@ const DEFAULT_SLOS: readonly Omit<
     // error rate at 1%.
     name: "Agent tool calls succeed",
     metric_name: "voice.tools.error",
+    source: "voice",
     service: null,
     objective_percent: 99,
     threshold: 0,
@@ -125,7 +129,9 @@ function evaluationFromRow(row: SloEvaluationRecord): SloEvaluation {
   };
 }
 
-function validateInput(input: SloDefinitionInput): Effect.Effect<SloDefinitionInput, ValidationError> {
+function validateInput(
+  input: SloDefinitionInput
+): Effect.Effect<SloDefinitionInput & { readonly source: SloDefinitionRecord["source"] }, ValidationError> {
   return Effect.gen(function* () {
     if (!cleanString(input.name)) {
       return yield* Effect.fail(new ValidationError({ message: "SLO name is required" }));
@@ -142,15 +148,22 @@ function validateInput(input: SloDefinitionInput): Effect.Effect<SloDefinitionIn
     if (!Number.isInteger(input.window_minutes) || input.window_minutes < 1 || input.window_minutes > 43_200) {
       return yield* Effect.fail(new ValidationError({ message: "window_minutes must be an integer between 1 and 43200" }));
     }
+    const source = cleanString(input.source) ?? "metrics";
+    if (source !== "metrics" && source !== "voice") {
+      return yield* Effect.fail(new ValidationError({ message: "source must be metrics or voice" }));
+    }
     const metricName = cleanString(input.metric_name);
-    if (metricName && resolveVoiceSloSource(metricName) && cleanString(input.service)) {
+    if (source === "voice" && metricName && !resolveVoiceSloSource(metricName)) {
+      return yield* Effect.fail(new ValidationError({ message: "unsupported voice objective metric_name" }));
+    }
+    if (source === "voice" && cleanString(input.service)) {
       // voice_turns / agent_tool_calls carry no service column, so a service
-      // filter would be silently ignored — reject it instead.
+      // filter would be silently ignored, so reject it instead.
       return yield* Effect.fail(new ValidationError({
         message: "service filter is not supported for voice objectives",
       }));
     }
-    return input;
+    return { ...input, source };
   });
 }
 
@@ -166,6 +179,7 @@ export function ensureDefaultSloDefinitions(
       project_id,
       name,
       metric_name,
+      source,
       service,
       objective_percent,
       threshold,
@@ -174,7 +188,7 @@ export function ensureDefaultSloDefinitions(
       created_at,
       updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(workspace_id, project_id, id) DO NOTHING`
   ).bind(
     definition.id,
@@ -182,6 +196,7 @@ export function ensureDefaultSloDefinitions(
     tenant.project_id,
     definition.name,
     definition.metric_name,
+    definition.source,
     definition.service,
     definition.objective_percent,
     definition.threshold,
@@ -226,6 +241,7 @@ export function createSloDefinition(
       project_id: tenant.project_id,
       name: cleanString(valid.name)!,
       metric_name: cleanString(valid.metric_name)!,
+      source: valid.source,
       service: cleanString(valid.service) ?? null,
       objective_percent: valid.objective_percent,
       threshold: valid.threshold,
@@ -242,6 +258,7 @@ export function createSloDefinition(
         project_id,
         name,
         metric_name,
+        source,
         service,
         objective_percent,
         threshold,
@@ -250,13 +267,14 @@ export function createSloDefinition(
         created_at,
         updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       definition.id,
       definition.workspace_id,
       definition.project_id,
       definition.name,
       definition.metric_name,
+      definition.source,
       definition.service,
       definition.objective_percent,
       definition.threshold,
@@ -337,7 +355,9 @@ function evaluateDefinition(
   definition: SloDefinition,
   evaluatedAt: string
 ): Effect.Effect<SloEvaluation, DatabaseError> {
-  const voiceSource = resolveVoiceSloSource(definition.metric_name);
+  const voiceSource = definition.source === "voice"
+    ? resolveVoiceSloSource(definition.metric_name)
+    : undefined;
   if (voiceSource) {
     return evaluateVoiceDefinition(db, tenant, definition, voiceSource, evaluatedAt);
   }
