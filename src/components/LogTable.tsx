@@ -1,4 +1,5 @@
 import type { FC } from "hono/jsx";
+import { LocalTime } from "@/components/LocalTime";
 import type { LogRecord } from "@/db/schema";
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -45,9 +46,7 @@ export const LogTable: FC<{ logs: LogRecord[]; total: number }> = ({ logs, total
           logs.map((log) => (
             <tr class="log-row" style="border-top:1px solid rgba(255,255,255,0.04)">
               <td class="px-4 py-2 text-xs font-mono text-right" style="color:#475569">
-                {new Date(log.timestamp).toLocaleTimeString("en-GB", {
-                  hour: "2-digit", minute: "2-digit", second: "2-digit",
-                })}
+                {<LocalTime iso={log.timestamp} />}
               </td>
               <td class="px-4 py-2">
                 <span

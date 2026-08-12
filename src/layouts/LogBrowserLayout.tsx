@@ -18,6 +18,7 @@ export const PulsemonLayout = jsxRenderer(({ children }) => {
       <body class="min-h-screen" hx-ext="ws">
         {children}
         <script src="/js/htmx.js" defer></script>
+        <script src="/js/localtime.js" defer></script>
         <script src="/js/hx-ws.js" defer></script>
         <Script src="/src/client/main.ts" />
       </body>

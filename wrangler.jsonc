@@ -53,4 +53,46 @@
       "new_classes": ["SearchSession"]
     }
   ]
+  ,
+  // ---------------------------------------------------------------------------
+  // UAT — the Multiverse DPT platform's non-production telemetry sink.
+  //
+  // A named env rather than the top-level config, because production Pulsemon is
+  // planned for a SEPARATE Cloudflare account and can then use the top-level
+  // block unchanged. Named envs do NOT inherit top-level vars or bindings, so
+  // every resource this env needs is restated here on purpose.
+  // ---------------------------------------------------------------------------
+  "env": {
+    "uat": {
+      "name": "pulsemon-uat",
+      "assets": { "directory": "public" },
+      "triggers": { "crons": ["*/15 * * * *"] },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "pulsemon-uat-db",
+          "database_id": "3beef21d-9238-4d83-b645-40d172828604",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "RAW_TELEMETRY", "bucket_name": "pulsemon-uat-raw-telemetry" }
+      ],
+      "queues": {
+        "producers": [{ "binding": "TELEMETRY_QUEUE", "queue": "pulsemon-uat-telemetry" }],
+        "consumers": [
+          {
+            "queue": "pulsemon-uat-telemetry",
+            "max_batch_size": 25,
+            "max_batch_timeout": 5,
+            "max_retries": 3,
+            "dead_letter_queue": "pulsemon-uat-telemetry-dlq"
+          }
+        ]
+      },
+      "durable_objects": {
+        "bindings": [{ "name": "SEARCH_SESSION", "class_name": "SearchSession" }]
+      }
+    }
+  }
 }

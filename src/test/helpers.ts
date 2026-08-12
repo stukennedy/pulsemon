@@ -86,7 +86,7 @@ export interface TestContext {
     workspace_id: string; project_id: string;
   }>) => void;
   seedAgentToolCall: (overrides?: Partial<{
-    id: string; trace_id: string; span_id: string; connection_id: string; session_id: string;
+    id: string; trace_id: string; span_id: string; connection_id: string; session_id: string | null;
     turn_id: string; tool_name: string; started_at: string; duration_ms: number;
     status: string; retry_count: number; error: string; workspace_id: string; project_id: string;
   }>) => void;
@@ -317,7 +317,7 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
       overrides?.trace_id ?? null,
       overrides?.span_id ?? null,
       overrides?.connection_id ?? null,
-      overrides?.session_id ?? `session-${seq}`,
+      overrides?.session_id === undefined ? `session-${seq}` : overrides.session_id,
       overrides?.turn_id ?? null,
       overrides?.tool_name ?? "lookup_account",
       overrides?.started_at ?? new Date(Date.now() - seq * 1000).toISOString(),

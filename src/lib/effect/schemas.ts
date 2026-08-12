@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema";
 
 const OptionalString = Schema.optional(Schema.String);
 const OptionalNumber = Schema.optional(Schema.Number);
+const OptionalNonNegativeNumber = Schema.optional(Schema.NonNegative);
 const OptionalBoolean = Schema.optional(Schema.Boolean);
 const OptionalUnknown = Schema.optional(Schema.Unknown);
 
@@ -110,10 +111,10 @@ export const PostVoiceTurnInputSchema = Schema.Struct({
   vad_start_ms: OptionalNumber,
   vad_end_ms: OptionalNumber,
   interruption: OptionalBoolean,
-  audio_latency_ms: OptionalNumber,
-  asr_latency_ms: OptionalNumber,
-  llm_latency_ms: OptionalNumber,
-  tts_latency_ms: OptionalNumber,
+  audio_latency_ms: OptionalNonNegativeNumber,
+  asr_latency_ms: OptionalNonNegativeNumber,
+  llm_latency_ms: OptionalNonNegativeNumber,
+  tts_latency_ms: OptionalNonNegativeNumber,
   input_tokens: OptionalNumber,
   output_tokens: OptionalNumber,
   cost_usd: OptionalNumber,

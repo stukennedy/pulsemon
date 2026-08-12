@@ -1,7 +1,10 @@
 import { Effect } from "effect";
 import type { AgentToolCall, Connection, Event, LogRecord, Span, VoiceTurn } from "@/db/schema";
 import type { TenantScope } from "@/types";
+import { createTurnCorrelator } from "@/lib/effect/turn-correlation";
+import { buildWaterfall, type WaterfallRow } from "@/lib/effect/voice-waterfall";
 import { DatabaseError } from "./errors";
+import { queryVoiceLatencyPercentiles } from "./voice-stats";
 
 export interface VoiceSessionSummary {
   readonly session_id: string;
@@ -28,7 +31,23 @@ export interface RealtimeSessionDetail {
   readonly spans: Span[];
   readonly logs: LogRecord[];
   readonly events: Event[];
+  readonly turnsWithTelemetry: TurnWithTelemetry[];
+  readonly waterfallRows: WaterfallRow[];
+  readonly timeline: SessionTimelineEntry[];
 }
+
+export interface TurnWithTelemetry {
+  readonly turn: VoiceTurn;
+  readonly toolCalls: AgentToolCall[];
+  readonly events: Event[];
+}
+
+export type SessionTimelineEntry =
+  | { readonly type: "turn"; readonly at: string; readonly item: VoiceTurn }
+  | { readonly type: "tool"; readonly at: string; readonly item: AgentToolCall }
+  | { readonly type: "span"; readonly at: string; readonly item: Span }
+  | { readonly type: "log"; readonly at: string; readonly item: LogRecord }
+  | { readonly type: "event"; readonly at: string; readonly item: Event };
 
 function messageFromUnknown(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -55,14 +74,102 @@ function sessionKey(value: string | null | undefined) {
   return value && value.trim().length > 0 ? value : null;
 }
 
-function summaryStatus(summary: VoiceSessionSummary) {
+export function voiceSessionStatus(summary: VoiceSessionSummary) {
   if (summary.tool_error_count > 0) return "error";
   if (summary.interruption_count > 0) return "warn";
   return "ok";
 }
 
-export function voiceSessionStatus(summary: VoiceSessionSummary) {
-  return summaryStatus(summary);
+export interface VoiceStageStats {
+  readonly stage: "asr" | "llm" | "tts" | "audio";
+  readonly samples: number;
+  readonly avg: number | null;
+  readonly p50: number | null;
+  readonly p95: number | null;
+}
+
+/**
+ * Per-stage latency stats computed from `voice_turns` - the voice pipeline's
+ * canonical record - NOT from spans. The previous voice header filtered spans
+ * whose operation starts with asr/llm/tts, a naming convention no ingest
+ * enforces; a producer reporting turns (the documented voice path) rendered
+ * "0 samples" forever while its data sat one table away.
+ *
+ * `audio` is release to first audible frame: the number the USER experiences
+ * as reply latency, and the one worth alerting on.
+ */
+export function queryVoiceStageStats(
+  db: D1Database,
+  tenant: TenantScope
+): Effect.Effect<VoiceStageStats[], DatabaseError> {
+  return dbEffect(async () => {
+    // Bounded to the most recent ROWS EXAMINED (one indexed window shared by
+    // all four stages), with null stages filtered afterwards. Bounding on
+    // non-null samples instead would let a sparse or never-reporting stage
+    // walk the tenant's entire history hunting for matches - the LIMIT must
+    // sit where the index can serve it. Percentiles therefore read as "over
+    // the last 2000 turns", which is also the operationally honest window:
+    // last week's incident should not colour today's p95.
+    const result = await queryVoiceLatencyPercentiles(db, tenant);
+
+    const byStage = new Map(result.map((row) => [row.stage, row]));
+    // Always all four stages, in pipeline order - a stage with no data renders
+    // as "0 samples" rather than disappearing, which is what tells an operator
+    // their producer isn't reporting it.
+    return (["asr", "llm", "tts", "audio"] as const).map((stage) => {
+      const row = byStage.get(stage);
+      return {
+        stage,
+        samples: Number(row?.samples ?? 0),
+        avg: numberOrNull(row?.avg),
+        p50: numberOrNull(row?.p50),
+        p95: numberOrNull(row?.p95),
+      };
+    });
+  });
+}
+
+/**
+ * Derived from the schema row rather than redeclared: a hand-written mirror
+ * already drifted once (started_at declared nullable against a NOT NULL
+ * column), and Pick makes the next schema change a type error here instead of
+ * a stale UI contract.
+ */
+export type RecentVoiceTurn = Pick<
+  VoiceTurn,
+  | "id"
+  | "trace_id"
+  | "session_id"
+  | "role"
+  | "started_at"
+  | "asr_latency_ms"
+  | "llm_latency_ms"
+  | "tts_latency_ms"
+  | "audio_latency_ms"
+  | "duration_ms"
+  | "interruption"
+  | "state"
+>;
+
+/** Most recent turns across sessions - the "recent pipelines" feed, one row
+ *  per turn, each linking back to its session. */
+export function queryRecentVoiceTurns(
+  db: D1Database,
+  tenant: TenantScope,
+  limit = 25
+): Effect.Effect<RecentVoiceTurn[], DatabaseError> {
+  return dbEffect(async () => {
+    const result = await db.prepare(
+      `SELECT id, trace_id, session_id, role, started_at,
+              asr_latency_ms, llm_latency_ms, tts_latency_ms, audio_latency_ms,
+              duration_ms, interruption, state
+       FROM voice_turns
+       WHERE workspace_id = ? AND project_id = ?
+       ORDER BY started_at DESC
+       LIMIT ?`
+    ).bind(tenant.workspace_id, tenant.project_id, limit).all<RecentVoiceTurn>();
+    return result.results;
+  });
 }
 
 export function queryVoiceSessionSummaries(
@@ -80,9 +187,9 @@ export function queryVoiceSessionSummaries(
         MAX(COALESCE(ended_at, started_at)) AS last_seen_at,
         COUNT(*) AS turn_count,
         SUM(CASE WHEN interruption = 1 THEN 1 ELSE 0 END) AS interruption_count,
-        AVG(asr_latency_ms) AS avg_asr_latency_ms,
-        AVG(llm_latency_ms) AS avg_llm_latency_ms,
-        AVG(tts_latency_ms) AS avg_tts_latency_ms,
+        AVG(CASE WHEN asr_latency_ms >= 0 THEN asr_latency_ms END) AS avg_asr_latency_ms,
+        AVG(CASE WHEN llm_latency_ms >= 0 THEN llm_latency_ms END) AS avg_llm_latency_ms,
+        AVG(CASE WHEN tts_latency_ms >= 0 THEN tts_latency_ms END) AS avg_tts_latency_ms,
         SUM(COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0)) AS total_tokens,
         SUM(COALESCE(cost_usd, 0)) AS cost_usd
        FROM voice_turns
@@ -154,7 +261,7 @@ export function getRealtimeSession(
   sessionId: string
 ): Effect.Effect<RealtimeSessionDetail, DatabaseError> {
   return dbEffect(async () => {
-    const [summaries, turnsResult, toolsResult] = await Promise.all([
+    const [summaries, turnsResult] = await Promise.all([
       Effect.runPromise(queryVoiceSessionSummaries(db, tenant, 500)),
       db.prepare(
         `SELECT * FROM voice_turns
@@ -163,19 +270,37 @@ export function getRealtimeSession(
            AND session_id = ?
          ORDER BY started_at ASC, COALESCE(turn_index, 0) ASC`
       ).bind(tenant.workspace_id, tenant.project_id, sessionId).all<VoiceTurn>(),
-      db.prepare(
-        `SELECT * FROM agent_tool_calls
-         WHERE workspace_id = ?
-           AND project_id = ?
-           AND session_id = ?
-         ORDER BY started_at ASC`
-      ).bind(tenant.workspace_id, tenant.project_id, sessionId).all<AgentToolCall>(),
     ]);
 
     const summary = summaries.find((item) => item.session_id === sessionId) ?? null;
     const turns = turnsResult.results;
-    const toolCalls = toolsResult.results;
     const connectionId = sessionKey(summary?.connection_id) ?? sessionKey(turns[0]?.connection_id) ?? null;
+    const turnIds = turns.map((turn) => turn.id);
+    const turnTraceIds = Array.from(new Set(
+      turns.map((turn) => sessionKey(turn.trace_id)).filter((value): value is string => Boolean(value))
+    ));
+    const toolConditions = ["session_id = ?"];
+    const toolBindings: unknown[] = [sessionId];
+    if (turnIds.length > 0) {
+      toolConditions.push(`turn_id IN (${placeholders(turnIds)})`);
+      toolBindings.push(...turnIds);
+    }
+    if (turnTraceIds.length > 0) {
+      toolConditions.push(`turn_id IN (${placeholders(turnTraceIds)})`, `trace_id IN (${placeholders(turnTraceIds)})`);
+      toolBindings.push(...turnTraceIds, ...turnTraceIds);
+    }
+    if (connectionId) {
+      toolConditions.push("connection_id = ?");
+      toolBindings.push(connectionId);
+    }
+    const toolCalls = (await db.prepare(
+      `SELECT * FROM agent_tool_calls
+       WHERE workspace_id = ?
+         AND project_id = ?
+         AND (${toolConditions.join(" OR ")})
+       ORDER BY started_at ASC
+       LIMIT 500`
+    ).bind(tenant.workspace_id, tenant.project_id, ...toolBindings).all<AgentToolCall>()).results;
     const traceIds = Array.from(new Set([
       ...turns.map((turn) => sessionKey(turn.trace_id)),
       ...toolCalls.map((call) => sessionKey(call.trace_id)),
@@ -234,6 +359,20 @@ export function getRealtimeSession(
       ...(connectionId ? [connectionId] : [])
     ).all<Event>()).results;
 
+    const assignments = createTurnCorrelator(turns).assign(toolCalls, events);
+    const turnsWithTelemetry = turns.map((turn) => ({
+      turn,
+      toolCalls: assignments.toolsFor(turn.id),
+      events: assignments.eventsFor(turn.id),
+    }));
+    const timeline: SessionTimelineEntry[] = [
+      ...turns.map((turn) => ({ type: "turn" as const, at: turn.started_at, item: turn })),
+      ...toolCalls.map((call) => ({ type: "tool" as const, at: call.started_at, item: call })),
+      ...spans.map((span) => ({ type: "span" as const, at: span.started_at, item: span })),
+      ...logs.map((log) => ({ type: "log" as const, at: log.timestamp, item: log })),
+      ...events.map((event) => ({ type: "event" as const, at: event.timestamp, item: event })),
+    ].sort((a, b) => a.at.localeCompare(b.at));
+
     return {
       summary,
       connection: connection ?? null,
@@ -242,6 +381,9 @@ export function getRealtimeSession(
       spans,
       logs,
       events,
+      turnsWithTelemetry,
+      waterfallRows: buildWaterfall(turns),
+      timeline,
     };
   });
 }

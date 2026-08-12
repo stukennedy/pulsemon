@@ -57,13 +57,46 @@ describe("Page routes", () => {
   });
 
   it("GET /sessions/:id returns session detail page", async () => {
-    ctx.seedVoiceTurn({ session_id: "session-route", connection_id: "conn-route", transcript: "hello route" });
+    ctx.seedVoiceTurn({
+      id: "turn-route-a",
+      session_id: "session-route",
+      connection_id: "conn-route",
+      trace_id: "trace-route-a",
+      transcript: "hello route",
+    });
+    ctx.seedVoiceTurn({
+      id: "turn-route-b",
+      session_id: "session-route",
+      connection_id: "conn-route",
+      trace_id: "trace-route-b",
+    });
+    ctx.seedAgentToolCall({
+      session_id: "session-route",
+      connection_id: "conn-route",
+      trace_id: "trace-route-a",
+      tool_name: "lookup_account",
+    });
 
     const res = await ctx.request("/sessions/session-route");
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain("session-route");
     expect(html).toContain("hello route");
+    expect(html).toContain('data-turn-waterfall-legend="true"');
+    expect(html).toContain("flex-wrap");
+    expect(html).toContain('data-tool-call-row="true"');
+    expect(html).not.toContain('data-tool-call-card="true"');
+  });
+
+  it("GET /sessions/:id renders a waterfall for a single-turn session", async () => {
+    ctx.seedVoiceTurn({ id: "only-turn", session_id: "single-turn-session" });
+
+    const res = await ctx.request("/sessions/single-turn-session");
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(html).toContain("Turn Waterfall");
+    expect(html).toContain("#turn-only-turn");
   });
 
   it("GET /monitors returns monitor evaluations page", async () => {

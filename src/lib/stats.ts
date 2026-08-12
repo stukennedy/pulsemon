@@ -5,6 +5,7 @@ import { connections, events, metrics } from "@/db/schema";
 import { buildConnectionConditions } from "./facets";
 import type { ActiveTag, TenantScope } from "@/types";
 import { DEFAULT_TENANT_SCOPE } from "./tenant";
+import { queryVoiceLatencyPercentiles } from "@/lib/effect/voice-stats";
 
 export interface DashboardStats {
   activeConnections: number;
@@ -68,6 +69,13 @@ export async function queryDashboardStats(
     sql`${connections.started_at} > ${recentCutoff}`
   );
 
+  // Voice stage percentiles from voice_turns - the canonical voice record.
+  // The span-derived categories below only cover producers that name spans
+  // `asr.*`/`llm.*`/`tts.*`; the documented voice ingest path reports TURNS,
+  // and without this merge the dashboard's voice cards read empty forever while
+  // the data sits in voice_turns.
+  const voicePercentiles = queryVoiceLatencyPercentiles(d1, tenant);
+
   const latencyPercentiles = d1.prepare(
     `WITH span_latency AS (
        SELECT
@@ -98,7 +106,7 @@ export async function queryDashboardStats(
      GROUP BY category`
   ).bind(tenant.workspace_id, tenant.project_id).all<LatencyPercentileRow>();
 
-  const [[connSummary], serviceRows, typeRows, volumeByDay, latencyRows, [eventCount]] = await Promise.all([
+  const [[connSummary], serviceRows, typeRows, volumeByDay, latencyRows, voiceLatencyRows, [eventCount]] = await Promise.all([
     db.select({
       total: count(),
       active: sql<number>`COUNT(CASE WHEN status = 'active' THEN 1 END)`,
@@ -127,6 +135,8 @@ export async function queryDashboardStats(
 
     latencyPercentiles,
 
+    voicePercentiles,
+
     db.select({ count: count() }).from(events).where(eventWhere),
   ]);
 
@@ -137,6 +147,13 @@ export async function queryDashboardStats(
     p50[row.category] = Number(row.p50 ?? 0);
     p95[row.category] = Number(row.p95 ?? 0);
     p99[row.category] = Number(row.p99 ?? 0);
+  }
+  // voice_turns wins where both exist: it is per-turn truth, while a span
+  // named `llm.generate` may be a coarser or duplicated view of the same call.
+  for (const row of voiceLatencyRows) {
+    if (row.p50 !== null) p50[row.stage] = Number(row.p50);
+    if (row.p95 !== null) p95[row.stage] = Number(row.p95);
+    if (row.p99 !== null) p99[row.stage] = Number(row.p99);
   }
 
   const total = connSummary.total || 1;
