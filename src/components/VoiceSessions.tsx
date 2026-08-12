@@ -374,7 +374,9 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
   tab = "turns",
 }) => {
   const summary = detail.summary;
-  const correlator = createTurnCorrelator(detail.turns);
+  // One exclusive assignment over the whole session — per-turn filtering
+  // double-assigned records when a session mixed keying styles.
+  const assigned = createTurnCorrelator(detail.turns).assign(detail.toolCalls, detail.events);
   const base = `/sessions/${encodeURIComponent(sessionId)}`;
   const tabs: Array<{ key: SessionDetailTab; label: string; href: string }> = [
     { key: "turns", label: "Turns", href: base },
@@ -445,8 +447,8 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
                 <TurnCard
                   turn={turn}
                   index={index}
-                  toolCalls={correlator.toolsForTurn(turn, detail.toolCalls)}
-                  events={correlator.eventsForTurn(turn, detail.events)}
+                  toolCalls={assigned.toolsFor(turn.id)}
+                  events={assigned.eventsFor(turn.id)}
                 />
               ))
             )}

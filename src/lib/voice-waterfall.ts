@@ -50,10 +50,12 @@ export function buildWaterfall(turns: readonly VoiceTurn[]): WaterfallRow[] {
     const asr = ms(turn.asr_latency_ms);
     const llm = ms(turn.llm_latency_ms);
     const tts = ms(turn.tts_latency_ms);
-    // No real duration and no measured stage → no segments at all. Deriving a
-    // tail from the divide-by-zero guard would draw a phantom sliver for a
-    // turn we know nothing about.
-    const measured = ms(turn.duration_ms) > 0 || asr + llm + tts > 0;
+    // No reported duration and no measured stage → no segments at all.
+    // Deriving a tail from the divide-by-zero guard would draw a phantom
+    // sliver for a turn we know nothing about. An EXPLICIT zero duration
+    // counts as reported — "instant" and "unknown" are different facts.
+    const reportedDuration = typeof turn.duration_ms === "number" && turn.duration_ms >= 0;
+    const measured = reportedDuration || asr + llm + tts > 0;
     const tail = measured ? Math.max(0, total - asr - llm - tts) : 0;
     const segments: WaterfallSegment[] = (
       [
@@ -66,11 +68,10 @@ export function buildWaterfall(turns: readonly VoiceTurn[]): WaterfallRow[] {
       .filter((s) => s.ms > 0)
       .map((s) => ({ ...s, pct: (s.ms / total) * 100 }));
 
-    const reported = ms(turn.duration_ms);
     return {
       turn,
       totalMs: measured ? total : null,
-      reportedMs: reported > 0 ? reported : null,
+      reportedMs: reportedDuration ? (turn.duration_ms as number) : null,
       widthPct: Math.max(2, (total / maxTotal) * 100),
       segments,
     };

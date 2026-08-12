@@ -92,3 +92,10 @@ describe("buildWaterfall", () => {
     expect(rows[0]!.widthPct).toBeGreaterThanOrEqual(2);
   });
 });
+
+describe("zero duration", () => {
+  it("treats an explicit zero duration as reported, not unknown", () => {
+    const [row] = buildWaterfall([turn({ duration_ms: 0 })]);
+    expect(row!.reportedMs).toBe(0);
+  });
+});

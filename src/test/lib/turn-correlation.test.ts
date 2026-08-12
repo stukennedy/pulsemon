@@ -41,18 +41,18 @@ describe("per-turn traces (one trace per turn — e.g. the DPT producer)", () =>
     turn({ id: "vt_1", trace_id: "vturn_a" }),
     turn({ id: "vt_2", trace_id: "vturn_b", started_at: "2026-08-12T08:01:00.000Z" }),
   ];
-  const correlator = createTurnCorrelator(turns);
+  const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
 
   it("trace match attaches to exactly one turn", () => {
     const calls = [call({ trace_id: "vturn_a" })];
-    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(1);
-    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(0);
+    expect(assigned(calls).toolsFor(turns[0]!.id)).toHaveLength(1);
+    expect(assigned(calls).toolsFor(turns[1]!.id)).toHaveLength(0);
   });
 
   it("events follow the same single-turn attachment", () => {
     const events = [event({ trace_id: "vturn_b", timestamp: "2026-08-12T08:01:05.000Z" })];
-    expect(correlator.eventsForTurn(turns[0]!, events)).toHaveLength(0);
-    expect(correlator.eventsForTurn(turns[1]!, events)).toHaveLength(1);
+    expect(assigned([], events).eventsFor(turns[0]!.id)).toHaveLength(0);
+    expect(assigned([], events).eventsFor(turns[1]!.id)).toHaveLength(1);
   });
 });
 
@@ -64,7 +64,7 @@ describe("session-level traces (every turn shares one trace)", () => {
     turn({ id: "vt_1", trace_id: "sess_t", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" }),
     turn({ id: "vt_2", trace_id: "sess_t", started_at: "2026-08-12T08:01:00.000Z", ended_at: "2026-08-12T08:01:10.000Z" }),
   ];
-  const correlator = createTurnCorrelator(turns);
+  const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
 
   it("identifies the shared trace", () => {
     expect(sharedTraceIds(turns).has("sess_t")).toBe(true);
@@ -74,41 +74,41 @@ describe("session-level traces (every turn shares one trace)", () => {
     const calls = [call({ trace_id: "sess_t", started_at: "2026-08-12T08:00:05.000Z" })];
     // Shared trace carries no turn information, so the window decides — but it
     // must land on one turn, not all of them.
-    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(1);
-    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(0);
+    expect(assigned(calls).toolsFor(turns[0]!.id)).toHaveLength(1);
+    expect(assigned(calls).toolsFor(turns[1]!.id)).toHaveLength(0);
   });
 
   it("shared-trace events fall back to the time window, landing on ONE turn", () => {
     const events = [event({ trace_id: "sess_t", timestamp: "2026-08-12T08:01:05.000Z" })];
-    expect(correlator.eventsForTurn(turns[0]!, events)).toHaveLength(0);
-    expect(correlator.eventsForTurn(turns[1]!, events)).toHaveLength(1);
+    expect(assigned([], events).eventsFor(turns[0]!.id)).toHaveLength(0);
+    expect(assigned([], events).eventsFor(turns[1]!.id)).toHaveLength(1);
   });
 });
 
 describe("turn_id producers", () => {
   const turns = [turn({ id: "vt_1", trace_id: "sess_t" }), turn({ id: "vt_2", trace_id: "sess_t" })];
-  const correlator = createTurnCorrelator(turns);
+  const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
 
   it("turn_id === turn.id is the canonical join and always wins", () => {
     const calls = [call({ turn_id: "vt_2" })];
-    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(0);
-    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(1);
+    expect(assigned(calls).toolsFor(turns[0]!.id)).toHaveLength(0);
+    expect(assigned(calls).toolsFor(turns[1]!.id)).toHaveLength(1);
   });
 
   it("turn_id matching the turn's own trace also joins (producer-side turn ids)", () => {
     const turnsB = [turn({ id: "vt_1", trace_id: "vturn_a" })];
     const calls = [call({ turn_id: "vturn_a" })];
-    expect(createTurnCorrelator(turnsB).toolsForTurn(turnsB[0]!, calls)).toHaveLength(1);
+    expect(createTurnCorrelator(turnsB).assign(calls, []).toolsFor(turnsB[0]!.id)).toHaveLength(1);
   });
 });
 
 describe("unkeyed records", () => {
   const turns = [turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" })];
-  const correlator = createTurnCorrelator(turns);
+  const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
 
   it("fall back to the turn's time window", () => {
-    expect(correlator.toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:00:05.000Z" })])).toHaveLength(1);
-    expect(correlator.toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:05:00.000Z" })])).toHaveLength(0);
+    expect(assigned([call({ started_at: "2026-08-12T08:00:05.000Z" })]).toolsFor(turns[0]!.id)).toHaveLength(1);
+    expect(assigned([call({ started_at: "2026-08-12T08:05:00.000Z" })]).toolsFor(turns[0]!.id)).toHaveLength(0);
   });
 });
 
@@ -118,16 +118,16 @@ describe("window boundaries", () => {
       turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: null }),
       turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: null }),
     ];
-    const correlator = createTurnCorrelator(turns);
+    const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
     const onBoundary = [call({ started_at: "2026-08-12T08:01:00.000Z" })];
-    expect(correlator.toolsForTurn(turns[0]!, onBoundary)).toHaveLength(0);
-    expect(correlator.toolsForTurn(turns[1]!, onBoundary)).toHaveLength(1);
+    expect(assigned(onBoundary).toolsFor(turns[0]!.id)).toHaveLength(0);
+    expect(assigned(onBoundary).toolsFor(turns[1]!.id)).toHaveLength(1);
   });
 
   it("an explicit ended_at stays INCLUSIVE — the closing instant is this turn's", () => {
     const turns = [turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" })];
     const onEnd = [call({ started_at: "2026-08-12T08:00:10.000Z" })];
-    expect(createTurnCorrelator(turns).toolsForTurn(turns[0]!, onEnd)).toHaveLength(1);
+    expect(createTurnCorrelator(turns).assign(onEnd, []).toolsFor(turns[0]!.id)).toHaveLength(1);
   });
 });
 
@@ -140,10 +140,10 @@ describe("shared-trace tool calls without turn_id", () => {
       turn({ id: "vt_1", trace_id: "sess_t", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" }),
       turn({ id: "vt_2", trace_id: "sess_t", started_at: "2026-08-12T08:01:00.000Z", ended_at: "2026-08-12T08:01:10.000Z" }),
     ];
-    const correlator = createTurnCorrelator(turns);
+    const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
     const calls = [call({ trace_id: "sess_t", started_at: "2026-08-12T08:01:05.000Z" })];
-    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(0);
-    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(1);
+    expect(assigned(calls).toolsFor(turns[0]!.id)).toHaveLength(0);
+    expect(assigned(calls).toolsFor(turns[1]!.id)).toHaveLength(1);
   });
 });
 
@@ -155,10 +155,10 @@ describe("turns without ended_at (ingest allows them)", () => {
       turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: null }),
       turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: null }),
     ];
-    const correlator = createTurnCorrelator(turns);
+    const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
     const late = [call({ started_at: "2026-08-12T08:01:30.000Z" })];
-    expect(correlator.toolsForTurn(turns[0]!, late)).toHaveLength(0);
-    expect(correlator.toolsForTurn(turns[1]!, late)).toHaveLength(1);
+    expect(assigned(late).toolsFor(turns[0]!.id)).toHaveLength(0);
+    expect(assigned(late).toolsFor(turns[1]!.id)).toHaveLength(1);
   });
 
   it("only the LAST turn stays open", () => {
@@ -180,15 +180,46 @@ describe("timestamp comparison uses instants, not strings", () => {
       turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:59.000Z" }),
       turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: "2026-08-12T08:02:00.000Z" }),
     ];
-    const correlator = createTurnCorrelator(turns);
+    const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
     const offsetCall = [call({ started_at: "2026-08-12T09:00:30.000+01:00" })];
-    expect(correlator.toolsForTurn(turns[0]!, offsetCall)).toHaveLength(1);
-    expect(correlator.toolsForTurn(turns[1]!, offsetCall)).toHaveLength(0);
+    expect(assigned(offsetCall).toolsFor(turns[0]!.id)).toHaveLength(1);
+    expect(assigned(offsetCall).toolsFor(turns[1]!.id)).toHaveLength(0);
   });
 
   it("tolerates differing fractional precision", () => {
     const turns = [turn({ id: "vt_1", started_at: "2026-08-12T08:00:00Z", ended_at: "2026-08-12T08:00:10.500Z" })];
-    const correlator = createTurnCorrelator(turns);
-    expect(correlator.toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:00:05.25Z" })])).toHaveLength(1);
+    const assigned = (tools=[] , events=[]) => createTurnCorrelator(turns).assign(tools, events);
+    expect(assigned([call({ started_at: "2026-08-12T08:00:05.25Z" })]).toolsFor(turns[0]!.id)).toHaveLength(1);
+  });
+});
+
+describe("mixed keying styles in one session", () => {
+  it("assigns a record to exactly ONE turn — key beats window, exclusively", () => {
+    // Round 9 P1: an event carrying turn A's unique trace, timestamped inside
+    // unkeyed turn B's window, matched A by trace AND B by time — rendered on
+    // both cards. Assignment is now a single exclusive pass.
+    const turns = [
+      turn({ id: "vt_a", trace_id: "trace_a", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" }),
+      turn({ id: "vt_b", trace_id: null, started_at: "2026-08-12T08:00:20.000Z", ended_at: "2026-08-12T08:00:30.000Z" }),
+    ];
+    const a = createTurnCorrelator(turns).assign(
+      [],
+      [event({ trace_id: "trace_a", timestamp: "2026-08-12T08:00:25.000Z" })]
+    );
+    expect(a.eventsFor("vt_a")).toHaveLength(1);
+    expect(a.eventsFor("vt_b")).toHaveLength(0);
+  });
+
+  it("a windowed record still lands when keyed records exist elsewhere", () => {
+    const turns = [
+      turn({ id: "vt_a", trace_id: "trace_a", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" }),
+      turn({ id: "vt_b", trace_id: null, started_at: "2026-08-12T08:00:20.000Z", ended_at: "2026-08-12T08:00:30.000Z" }),
+    ];
+    const a = createTurnCorrelator(turns).assign(
+      [call({ started_at: "2026-08-12T08:00:25.000Z" })],
+      []
+    );
+    expect(a.toolsFor("vt_b")).toHaveLength(1);
+    expect(a.toolsFor("vt_a")).toHaveLength(0);
   });
 });

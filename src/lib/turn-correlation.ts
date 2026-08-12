@@ -88,43 +88,82 @@ function inWindow(at: string, turn: VoiceTurn, ends: Map<string, TurnBound>): bo
   return bound.inferred ? t < bound.end : t <= bound.end;
 }
 
-export interface TurnCorrelator {
-  toolsForTurn(turn: VoiceTurn, toolCalls: readonly AgentToolCall[]): AgentToolCall[];
-  eventsForTurn(turn: VoiceTurn, events: readonly Event[]): Event[];
+export interface TurnAssignments {
+  toolsFor(turnId: string): AgentToolCall[];
+  eventsFor(turnId: string): Event[];
 }
 
-/** Build once per session view — precomputes the shared-trace set and the
- *  effective end bounds the per-turn filters depend on. */
+export interface TurnCorrelator {
+  /**
+   * Assign every record to AT MOST ONE turn, computed once over the whole
+   * session. Two passes, and the order is the point:
+   *
+   *   1. KEYED — `turn_id`, or a trace that uniquely identifies a turn.
+   *   2. WINDOW — only records the keyed pass left unassigned, matched
+   *      against the FIRST turn (chronologically) whose window contains them.
+   *
+   * Filtering per turn instead — each turn independently asking "is this
+   * mine?" — double-assigned records in sessions that MIX keying styles: an
+   * event carrying turn A's unique trace, timestamped inside unkeyed turn B's
+   * window, matched A by trace and B by time and rendered on both cards.
+   */
+  assign(toolCalls: readonly AgentToolCall[], events: readonly Event[]): TurnAssignments;
+}
+
 export function createTurnCorrelator(turns: readonly VoiceTurn[]): TurnCorrelator {
   const shared = sharedTraceIds(turns);
   const ends = effectiveEnds(turns);
+  const ordered = [...turns].sort(
+    (a, b) => (Date.parse(a.started_at ?? "") || 0) - (Date.parse(b.started_at ?? "") || 0)
+  );
+  const byUniqueTrace = new Map<string, VoiceTurn>();
+  for (const turn of turns) {
+    if (turn.trace_id && !shared.has(turn.trace_id)) byUniqueTrace.set(turn.trace_id, turn);
+  }
+  const byId = new Map(turns.map((turn) => [turn.id, turn]));
+
+  function keyedTurn(turnId: string | null, traceId: string | null): VoiceTurn | undefined {
+    if (turnId) {
+      // Canonical join first, then producers using their own per-turn id for
+      // both fields.
+      return byId.get(turnId) ?? byUniqueTrace.get(turnId);
+    }
+    if (traceId) return byUniqueTrace.get(traceId);
+    return undefined;
+  }
+
+  function windowTurn(at: string): VoiceTurn | undefined {
+    return ordered.find((turn) => inWindow(at, turn, ends));
+  }
+
   return {
-    toolsForTurn(turn, toolCalls) {
-      return toolCalls.filter((call) => {
-        if (call.turn_id) return call.turn_id === turn.id || call.turn_id === turn.trace_id;
-        // A trace that uniquely identifies this turn is a real join.
-        if (call.trace_id && turn.trace_id && !shared.has(turn.trace_id)) {
-          return call.trace_id === turn.trace_id;
-        }
-        // Otherwise the trace carries no turn information — a session-level
-        // trace copied onto every call, or a trace we cannot resolve. Time is
-        // the remaining signal; rejecting outright dropped these calls from
-        // every card (they only survived under All activity).
-        return inWindow(call.started_at, turn, ends);
-      });
-    },
-    eventsForTurn(turn, events) {
-      const traceIsTurnKey = !!turn.trace_id && !shared.has(turn.trace_id);
-      return events.filter((event) => {
-        if (traceIsTurnKey && event.trace_id) return event.trace_id === turn.trace_id;
-        if (!event.trace_id || !traceIsTurnKey) {
-          // Shared-trace (or unkeyed) events: the time window is the only
-          // honest association left. Events outside every turn's window belong
-          // to the session view, not to a turn card.
-          return inWindow(event.timestamp, turn, ends);
-        }
-        return false;
-      });
+    assign(toolCalls, events) {
+      const tools = new Map<string, AgentToolCall[]>();
+      const eventMap = new Map<string, Event[]>();
+      const put = <T>(map: Map<string, T[]>, turn: VoiceTurn | undefined, record: T) => {
+        if (!turn) return;
+        const list = map.get(turn.id) ?? [];
+        list.push(record);
+        map.set(turn.id, list);
+      };
+
+      for (const call of toolCalls) {
+        const keyed = keyedTurn(call.turn_id ?? null, call.trace_id ?? null);
+        // Keyed wins outright; only a record NO key claims may fall back to
+        // time. A shared/unresolvable trace carries no turn information, so it
+        // is treated as unkeyed rather than rejected (rejecting dropped those
+        // calls from every card).
+        put(tools, keyed ?? windowTurn(call.started_at), call);
+      }
+      for (const event of events) {
+        const keyed = keyedTurn(null, event.trace_id ?? null);
+        put(eventMap, keyed ?? windowTurn(event.timestamp), event);
+      }
+
+      return {
+        toolsFor: (turnId) => tools.get(turnId) ?? [],
+        eventsFor: (turnId) => eventMap.get(turnId) ?? [],
+      };
     },
   };
 }
