@@ -20,6 +20,10 @@
 
   var FMT = {
     time: { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false },
+    "time-ms": {
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      fractionalSecondDigits: 3, hour12: false,
+    },
     datetime: { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false },
     date: { day: "numeric", month: "short", year: "numeric" },
   };

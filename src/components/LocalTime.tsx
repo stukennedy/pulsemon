@@ -8,7 +8,7 @@ import type { FC } from "hono/jsx";
  * rewrites the text client-side and re-runs after HTMX/ws swaps. No-JS
  * readers see the UTC fallback, suffixed so it cannot be mistaken for local.
  */
-export const LocalTime: FC<{ iso: string | null | undefined; fmt?: "time" | "datetime" | "date" }> = ({
+export const LocalTime: FC<{ iso: string | null | undefined; fmt?: "time" | "time-ms" | "datetime" | "date" }> = ({
   iso,
   fmt = "time",
 }) => {
@@ -20,7 +20,11 @@ export const LocalTime: FC<{ iso: string | null | undefined; fmt?: "time" | "dat
       ? d.toISOString().slice(0, 10)
       : fmt === "datetime"
         ? `${d.toISOString().slice(0, 19).replace("T", " ")} UTC`
-        : `${d.toISOString().slice(11, 19)} UTC`;
+        : fmt === "time-ms"
+          ? // Sub-second precision matters where several records share a second
+            // — connection event ordering is unreadable without it.
+            `${d.toISOString().slice(11, 23)} UTC`
+          : `${d.toISOString().slice(11, 19)} UTC`;
   return (
     <time datetime={d.toISOString()} data-fmt={fmt}>
       {fallback}

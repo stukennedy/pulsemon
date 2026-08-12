@@ -120,7 +120,7 @@ export const ConnectionDetail: FC<{
             <span class="flex-1" />
             <span class="text-xs font-mono" style="color:#475569">
               {event.timestamp
-                ? <LocalTime iso={event.timestamp} />
+                ? <LocalTime iso={event.timestamp} fmt="time-ms" />
                 : "—"}
             </span>
           </div>

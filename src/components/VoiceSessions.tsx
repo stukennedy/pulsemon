@@ -142,7 +142,7 @@ const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
       <div class="px-4 py-3 space-y-1.5">
         {rows.map((row) => (
           <a
-            href={`#${turnAnchor(row.turn)}`}
+            href={`#turn-${encodeURIComponent(row.turn.id)}`}
             class="flex items-center gap-3 group no-underline"
             title={`turn ${row.turn.turn_index ?? "?"}: ${formatDuration(row.totalMs)}`}
           >
