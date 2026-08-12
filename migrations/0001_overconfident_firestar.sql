@@ -1,0 +1,1 @@
+CREATE INDEX `idx_voice_turns_tenant_started` ON `voice_turns` (`workspace_id`,`project_id`,`started_at`);

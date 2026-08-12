@@ -23,7 +23,9 @@ export interface WaterfallSegment {
 
 export interface WaterfallRow {
   readonly turn: VoiceTurn;
-  readonly totalMs: number;
+  /** Null when the turn reports no duration AND no stage — "unknown", which
+   *  must not be rendered as the 1ms the divide-by-zero guard would imply. */
+  readonly totalMs: number | null;
   /** Row width as a percentage of the LONGEST turn, so rows compare visually. */
   readonly widthPct: number;
   readonly segments: WaterfallSegment[];
@@ -58,7 +60,7 @@ export function buildWaterfall(turns: readonly VoiceTurn[]): WaterfallRow[] {
 
     return {
       turn,
-      totalMs: total,
+      totalMs: measured ? total : null,
       widthPct: Math.max(2, (total / maxTotal) * 100),
       segments,
     };

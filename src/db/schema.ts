@@ -151,6 +151,10 @@ export const voice_turns = sqliteTable("voice_turns", {
   index("idx_voice_turns_trace").on(table.trace_id),
   index("idx_voice_turns_started").on(table.started_at),
   index("idx_voice_turns_tenant_session").on(table.workspace_id, table.project_id, table.session_id),
+  // Recent-turns feed and the per-stage percentile scans both filter by tenant
+  // and take the newest rows; without this they sort the tenant's whole
+  // history before applying LIMIT.
+  index("idx_voice_turns_tenant_started").on(table.workspace_id, table.project_id, table.started_at),
 ]);
 
 export const agent_tool_calls = sqliteTable("agent_tool_calls", {

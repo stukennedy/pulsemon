@@ -37,8 +37,18 @@ export function sharedTraceIds(turns: readonly VoiceTurn[]): Set<string> {
  * The next turn starting is the honest upper bound — under any turn-taking, a
  * turn is over once its successor begins. Only the LAST turn stays open.
  */
+/** Epoch ms, or null when unparseable. RFC 3339 permits offsets ("+01:00")
+ *  and varying fractional precision, so lexical comparison of two valid
+ *  timestamps does NOT preserve chronological order — every window check
+ *  below compares instants. */
+function instant(value: string | null | undefined): number | null {
+  if (!value) return null;
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? null : ms;
+}
+
 export interface TurnBound {
-  readonly end: string;
+  readonly end: number;
   /** True when `end` came from the next turn's start rather than `ended_at`.
    *  Inferred bounds are EXCLUSIVE: a record stamped exactly at the next
    *  turn's start belongs to that turn, not to both. A real `ended_at` stays
@@ -47,21 +57,35 @@ export interface TurnBound {
 }
 
 export function effectiveEnds(turns: readonly VoiceTurn[]): Map<string, TurnBound> {
-  const ordered = [...turns].sort((a, b) => (a.started_at ?? "").localeCompare(b.started_at ?? ""));
+  const ordered = [...turns].sort(
+    (a, b) => (instant(a.started_at) ?? 0) - (instant(b.started_at) ?? 0)
+  );
   const ends = new Map<string, TurnBound>();
   for (let i = 0; i < ordered.length; i++) {
     const turn = ordered[i]!;
-    if (turn.ended_at) ends.set(turn.id, { end: turn.ended_at, inferred: false });
-    else ends.set(turn.id, { end: ordered[i + 1]?.started_at ?? "9999", inferred: true });
+    const explicit = instant(turn.ended_at);
+    if (explicit !== null) {
+      ends.set(turn.id, { end: explicit, inferred: false });
+    } else {
+      ends.set(turn.id, {
+        end: instant(ordered[i + 1]?.started_at) ?? Number.POSITIVE_INFINITY,
+        inferred: true,
+      });
+    }
   }
   return ends;
 }
 
 function inWindow(at: string, turn: VoiceTurn, ends: Map<string, TurnBound>): boolean {
-  if (!turn.started_at) return false;
-  const bound = ends.get(turn.id) ?? { end: turn.ended_at ?? "9999", inferred: !turn.ended_at };
-  if (at < turn.started_at) return false;
-  return bound.inferred ? at < bound.end : at <= bound.end;
+  const t = instant(at);
+  const start = instant(turn.started_at);
+  if (t === null || start === null) return false;
+  const bound = ends.get(turn.id) ?? {
+    end: instant(turn.ended_at) ?? Number.POSITIVE_INFINITY,
+    inferred: !turn.ended_at,
+  };
+  if (t < start) return false;
+  return bound.inferred ? t < bound.end : t <= bound.end;
 }
 
 export interface TurnCorrelator {

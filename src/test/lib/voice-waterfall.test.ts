@@ -74,9 +74,11 @@ describe("buildWaterfall", () => {
     expect(row!.totalMs).toBe(1700); // widened to the stage sum, not clamped down
   });
 
-  it("copes with a turn missing every measurement", () => {
+  it("reports an unmeasured turn as unknown, not as 1ms", () => {
+    // The divide-by-zero guard used to surface on the card as a literal 1ms.
     const [row] = buildWaterfall([turn({})]);
     expect(row!.segments).toEqual([]);
+    expect(row!.totalMs).toBeNull();
     expect(row!.widthPct).toBeGreaterThan(0); // still renders a hairline row
   });
 

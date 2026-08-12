@@ -144,7 +144,7 @@ const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
           <a
             href={`#turn-${encodeURIComponent(row.turn.id)}`}
             class="flex items-center gap-3 group no-underline"
-            title={`turn ${row.turn.turn_index ?? "?"}: ${formatDuration(row.totalMs)}`}
+            title={`turn ${row.turn.turn_index ?? "?"}: ${row.totalMs === null ? "duration unknown" : formatDuration(row.totalMs)}`}
           >
             <span class="w-8 text-right text-[10px] font-mono shrink-0" style="color:#475569">
               #{row.turn.turn_index ?? "·"}
@@ -153,7 +153,7 @@ const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
               <WaterfallBar row={row} />
             </div>
             <span class={`w-16 text-right text-[10px] font-mono shrink-0 ${durationColor(row.totalMs)}`}>
-              {formatDuration(row.totalMs)}
+              {row.totalMs === null ? "—" : formatDuration(row.totalMs)}
             </span>
             <span class="w-4 text-[10px] shrink-0" style="color:#f59e0b">{row.turn.interruption ? "⚡" : ""}</span>
           </a>

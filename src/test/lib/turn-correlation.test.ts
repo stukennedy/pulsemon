@@ -167,7 +167,28 @@ describe("turns without ended_at (ingest allows them)", () => {
       turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: null }),
     ];
     const ends = effectiveEnds(turns);
-    expect(ends.get("vt_1")).toEqual({ end: "2026-08-12T08:01:00.000Z", inferred: true });
-    expect(ends.get("vt_2")).toEqual({ end: "9999", inferred: true });
+    expect(ends.get("vt_1")).toEqual({ end: Date.parse("2026-08-12T08:01:00.000Z"), inferred: true });
+    expect(ends.get("vt_2")).toEqual({ end: Number.POSITIVE_INFINITY, inferred: true });
+  });
+});
+
+describe("timestamp comparison uses instants, not strings", () => {
+  it("orders correctly across RFC 3339 offsets", () => {
+    // 09:00:30+01:00 is 08:00:30Z — inside turn 1 — but sorts AFTER "2026-..T08:01"
+    // lexically, which would have placed it in turn 2.
+    const turns = [
+      turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:59.000Z" }),
+      turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: "2026-08-12T08:02:00.000Z" }),
+    ];
+    const correlator = createTurnCorrelator(turns);
+    const offsetCall = [call({ started_at: "2026-08-12T09:00:30.000+01:00" })];
+    expect(correlator.toolsForTurn(turns[0]!, offsetCall)).toHaveLength(1);
+    expect(correlator.toolsForTurn(turns[1]!, offsetCall)).toHaveLength(0);
+  });
+
+  it("tolerates differing fractional precision", () => {
+    const turns = [turn({ id: "vt_1", started_at: "2026-08-12T08:00:00Z", ended_at: "2026-08-12T08:00:10.500Z" })];
+    const correlator = createTurnCorrelator(turns);
+    expect(correlator.toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:00:05.25Z" })])).toHaveLength(1);
   });
 });
