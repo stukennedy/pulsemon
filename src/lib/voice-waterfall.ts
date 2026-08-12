@@ -26,6 +26,14 @@ export interface WaterfallRow {
   /** Null when the turn reports no duration AND no stage — "unknown", which
    *  must not be rendered as the 1ms the divide-by-zero guard would imply. */
   readonly totalMs: number | null;
+  /**
+   * The duration the producer actually REPORTED, when it did. Distinct from
+   * `totalMs`: when stage measurements overlap and sum past `duration_ms`,
+   * geometry widens to the stage sum (bars must not lie spatially) but the
+   * number shown stays the recorded duration — the chart must not invent a
+   * total the turn never reported.
+   */
+  readonly reportedMs: number | null;
   /** Row width as a percentage of the LONGEST turn, so rows compare visually. */
   readonly widthPct: number;
   readonly segments: WaterfallSegment[];
@@ -58,9 +66,11 @@ export function buildWaterfall(turns: readonly VoiceTurn[]): WaterfallRow[] {
       .filter((s) => s.ms > 0)
       .map((s) => ({ ...s, pct: (s.ms / total) * 100 }));
 
+    const reported = ms(turn.duration_ms);
     return {
       turn,
       totalMs: measured ? total : null,
+      reportedMs: reported > 0 ? reported : null,
       widthPct: Math.max(2, (total / maxTotal) * 100),
       segments,
     };

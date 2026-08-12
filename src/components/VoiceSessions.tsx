@@ -146,7 +146,13 @@ const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
           <a
             href={`#turn-${encodeURIComponent(row.turn.id)}`}
             class="flex items-center gap-3 group no-underline"
-            title={`turn ${row.turn.turn_index ?? "?"}: ${row.totalMs === null ? "duration unknown" : formatDuration(row.totalMs)}`}
+            title={`turn ${row.turn.turn_index ?? "?"}: ${
+              row.reportedMs !== null && row.totalMs !== null && row.totalMs > row.reportedMs
+                ? `${formatDuration(row.reportedMs)} reported — stages sum to ${formatDuration(row.totalMs)}`
+                : row.reportedMs === null && row.totalMs === null
+                  ? "duration unknown"
+                  : formatDuration(row.reportedMs ?? row.totalMs)
+            }`}
           >
             <span class="w-8 text-right text-[10px] font-mono shrink-0" style="color:#475569">
               #{row.turn.turn_index ?? "·"}
@@ -154,8 +160,8 @@ const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
             <div class="flex-1 min-w-0">
               <WaterfallBar row={row} />
             </div>
-            <span class={`w-16 text-right text-[10px] font-mono shrink-0 ${durationColor(row.totalMs)}`}>
-              {row.totalMs === null ? "—" : formatDuration(row.totalMs)}
+            <span class={`w-16 text-right text-[10px] font-mono shrink-0 ${durationColor(row.reportedMs ?? row.totalMs)}`}>
+              {formatDuration(row.reportedMs ?? row.totalMs)}
             </span>
             <span class="w-4 text-[10px] shrink-0" style="color:#f59e0b">{row.turn.interruption ? "⚡" : ""}</span>
           </a>

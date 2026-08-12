@@ -71,7 +71,8 @@ describe("buildWaterfall", () => {
       turn({ asr_latency_ms: 500, llm_latency_ms: 900, tts_latency_ms: 300, duration_ms: 1000 }),
     ]);
     expect(row!.segments.find((s) => s.stage === "tail")).toBeUndefined();
-    expect(row!.totalMs).toBe(1700); // widened to the stage sum, not clamped down
+    expect(row!.totalMs).toBe(1700); // geometry widens to the stage sum
+    expect(row!.reportedMs).toBe(1000); // ...but the reported duration is preserved
   });
 
   it("reports an unmeasured turn as unknown, not as 1ms", () => {
@@ -79,6 +80,7 @@ describe("buildWaterfall", () => {
     const [row] = buildWaterfall([turn({})]);
     expect(row!.segments).toEqual([]);
     expect(row!.totalMs).toBeNull();
+    expect(row!.reportedMs).toBeNull();
     expect(row!.widthPct).toBeGreaterThan(0); // still renders a hairline row
   });
 
