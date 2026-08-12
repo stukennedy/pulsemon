@@ -28,10 +28,8 @@
     date: { day: "numeric", month: "short", year: "numeric" },
   };
 
-  function localise(root) {
-    var nodes = (root.querySelectorAll ? root : document).querySelectorAll
-      ? (root.querySelectorAll ? root : document).querySelectorAll("time[datetime]:not([data-localised])")
-      : [];
+  function localise() {
+    var nodes = document.querySelectorAll("time[datetime]:not([data-localised])");
     for (var i = 0; i < nodes.length; i++) {
       var el = nodes[i];
       var iso = el.getAttribute("datetime");
@@ -46,7 +44,7 @@
   }
 
   function run() {
-    localise(document);
+    localise();
   }
 
   if (document.readyState === "loading") {

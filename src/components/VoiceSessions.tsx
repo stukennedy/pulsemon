@@ -27,6 +27,7 @@ export const VoiceSessionTable: FC<{ sessions: VoiceSessionSummary[] }> = ({ ses
     <div class="px-4 py-2" style="border-bottom:1px solid rgba(255,255,255,0.05)">
       <span style={HEADING}>Recent Voice Sessions</span>
     </div>
+    <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
         <tr style="border-bottom:1px solid rgba(255,255,255,0.06)">
@@ -79,6 +80,7 @@ export const VoiceSessionTable: FC<{ sessions: VoiceSessionSummary[] }> = ({ ses
         )}
       </tbody>
     </table>
+    </div>
   </div>
 );
 

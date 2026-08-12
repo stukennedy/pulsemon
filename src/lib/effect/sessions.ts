@@ -88,30 +88,29 @@ export function queryVoiceStageStats(
   tenant: TenantScope
 ): Effect.Effect<VoiceStageStats[], DatabaseError> {
   return dbEffect(async () => {
-    // Bounded per stage to the most recent rows: percentiles over the full
-    // history both grow the scan without limit AND stop meaning anything
-    // operationally — last week's incident should not colour today's p95.
+    // Bounded to the most recent ROWS EXAMINED (one indexed window shared by
+    // all four stages), with null stages filtered afterwards. Bounding on
+    // non-null samples instead would let a sparse or never-reporting stage
+    // walk the tenant's entire history hunting for matches — the LIMIT must
+    // sit where the index can serve it. Percentiles therefore read as "over
+    // the last 2000 turns", which is also the operationally honest window:
+    // last week's incident should not colour today's p95.
     const result = await db.prepare(
-      `WITH stage_latency AS (
-         SELECT stage, ms FROM (
-           SELECT 'asr' AS stage, asr_latency_ms AS ms, started_at FROM voice_turns
-             WHERE workspace_id = ?1 AND project_id = ?2 AND asr_latency_ms IS NOT NULL
-             ORDER BY started_at DESC LIMIT 1000)
+      `WITH recent AS (
+         SELECT asr_latency_ms, llm_latency_ms, tts_latency_ms, audio_latency_ms
+         FROM voice_turns
+         WHERE workspace_id = ?1 AND project_id = ?2
+         ORDER BY started_at DESC
+         LIMIT 2000
+       ),
+       stage_latency AS (
+         SELECT 'asr' AS stage, asr_latency_ms AS ms FROM recent WHERE asr_latency_ms IS NOT NULL
          UNION ALL
-         SELECT stage, ms FROM (
-           SELECT 'llm' AS stage, llm_latency_ms AS ms, started_at FROM voice_turns
-             WHERE workspace_id = ?1 AND project_id = ?2 AND llm_latency_ms IS NOT NULL
-             ORDER BY started_at DESC LIMIT 1000)
+         SELECT 'llm', llm_latency_ms FROM recent WHERE llm_latency_ms IS NOT NULL
          UNION ALL
-         SELECT stage, ms FROM (
-           SELECT 'tts' AS stage, tts_latency_ms AS ms, started_at FROM voice_turns
-             WHERE workspace_id = ?1 AND project_id = ?2 AND tts_latency_ms IS NOT NULL
-             ORDER BY started_at DESC LIMIT 1000)
+         SELECT 'tts', tts_latency_ms FROM recent WHERE tts_latency_ms IS NOT NULL
          UNION ALL
-         SELECT stage, ms FROM (
-           SELECT 'audio' AS stage, audio_latency_ms AS ms, started_at FROM voice_turns
-             WHERE workspace_id = ?1 AND project_id = ?2 AND audio_latency_ms IS NOT NULL
-             ORDER BY started_at DESC LIMIT 1000)
+         SELECT 'audio', audio_latency_ms FROM recent WHERE audio_latency_ms IS NOT NULL
        ),
        ranked AS (
          SELECT stage, ms,
@@ -151,20 +150,27 @@ export function queryVoiceStageStats(
   });
 }
 
-export interface RecentVoiceTurn {
-  readonly id: string;
-  readonly trace_id: string | null;
-  readonly session_id: string | null;
-  readonly role: string;
-  readonly started_at: string | null;
-  readonly asr_latency_ms: number | null;
-  readonly llm_latency_ms: number | null;
-  readonly tts_latency_ms: number | null;
-  readonly audio_latency_ms: number | null;
-  readonly duration_ms: number | null;
-  readonly interruption: number;
-  readonly state: string | null;
-}
+/**
+ * Derived from the schema row rather than redeclared: a hand-written mirror
+ * already drifted once (started_at declared nullable against a NOT NULL
+ * column), and Pick makes the next schema change a type error here instead of
+ * a stale UI contract.
+ */
+export type RecentVoiceTurn = Pick<
+  VoiceTurn,
+  | "id"
+  | "trace_id"
+  | "session_id"
+  | "role"
+  | "started_at"
+  | "asr_latency_ms"
+  | "llm_latency_ms"
+  | "tts_latency_ms"
+  | "audio_latency_ms"
+  | "duration_ms"
+  | "interruption"
+  | "state"
+>;
 
 /** Most recent turns across sessions — the "recent pipelines" feed, one row
  *  per turn, each linking back to its session. */
@@ -180,7 +186,7 @@ export function queryRecentVoiceTurns(
               duration_ms, interruption, state
        FROM voice_turns
        WHERE workspace_id = ? AND project_id = ?
-       ORDER BY COALESCE(started_at, ended_at) DESC
+       ORDER BY started_at DESC
        LIMIT ?`
     ).bind(tenant.workspace_id, tenant.project_id, limit).all<RecentVoiceTurn>();
     return result.results;

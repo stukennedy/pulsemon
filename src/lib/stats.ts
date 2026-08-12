@@ -74,21 +74,19 @@ export async function queryDashboardStats(
   // and without this merge the dashboard's voice cards read "—" forever while
   // the data sits in voice_turns.
   const voicePercentiles = d1.prepare(
-    `WITH stage_latency AS (
-       SELECT category, ms FROM (
-         SELECT 'asr' AS category, asr_latency_ms AS ms, started_at FROM voice_turns
-           WHERE workspace_id = ?1 AND project_id = ?2 AND asr_latency_ms IS NOT NULL
-           ORDER BY started_at DESC LIMIT 1000)
+    `WITH recent AS (
+       SELECT asr_latency_ms, llm_latency_ms, tts_latency_ms
+       FROM voice_turns
+       WHERE workspace_id = ?1 AND project_id = ?2
+       ORDER BY started_at DESC
+       LIMIT 2000
+     ),
+     stage_latency AS (
+       SELECT 'asr' AS category, asr_latency_ms AS ms FROM recent WHERE asr_latency_ms IS NOT NULL
        UNION ALL
-       SELECT category, ms FROM (
-         SELECT 'llm' AS category, llm_latency_ms AS ms, started_at FROM voice_turns
-           WHERE workspace_id = ?1 AND project_id = ?2 AND llm_latency_ms IS NOT NULL
-           ORDER BY started_at DESC LIMIT 1000)
+       SELECT 'llm', llm_latency_ms FROM recent WHERE llm_latency_ms IS NOT NULL
        UNION ALL
-       SELECT category, ms FROM (
-         SELECT 'tts' AS category, tts_latency_ms AS ms, started_at FROM voice_turns
-           WHERE workspace_id = ?1 AND project_id = ?2 AND tts_latency_ms IS NOT NULL
-           ORDER BY started_at DESC LIMIT 1000)
+       SELECT 'tts', tts_latency_ms FROM recent WHERE tts_latency_ms IS NOT NULL
      ),
      ranked AS (
        SELECT category, ms,

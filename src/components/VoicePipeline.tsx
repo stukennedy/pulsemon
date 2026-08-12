@@ -21,7 +21,7 @@ const CARD_STAGES: Array<{ key: VoiceStageStats["stage"]; label: string; hint: s
   { key: "audio", label: "HEARD", hint: "release → audible reply" },
 ];
 
-const StatCell: FC<{ label: string; value: number | null; tone: string }> = ({ label, value, tone }) => (
+const StatCell: FC<{ label: string; value: number | null }> = ({ label, value }) => (
   <div>
     <div style="font-size:10px;font-weight:600;letter-spacing:0.09em;text-transform:uppercase;color:#374151;font-family:'IBM Plex Mono',monospace">
       {label}
@@ -44,9 +44,9 @@ export const VoiceStageCards: FC<{ stages: VoiceStageStats[] }> = ({ stages }) =
             <span class="text-[10px]" style="color:#475569">{hint}</span>
           </div>
           <div class="grid grid-cols-3 gap-3 mt-3">
-            <StatCell label="Avg" value={stage?.avg ?? null} tone="" />
-            <StatCell label="P50" value={stage?.p50 ?? null} tone="" />
-            <StatCell label="P95" value={stage?.p95 ?? null} tone="" />
+            <StatCell label="Avg" value={stage?.avg ?? null} />
+            <StatCell label="P50" value={stage?.p50 ?? null} />
+            <StatCell label="P95" value={stage?.p95 ?? null} />
           </div>
           <div class="text-[10px] font-mono mt-2" style="color:#475569">{stage?.samples ?? 0} samples</div>
         </div>
@@ -62,6 +62,7 @@ export const RecentVoiceTurnsTable: FC<{ turns: RecentVoiceTurn[] }> = ({ turns 
         Recent Turns
       </span>
     </div>
+    <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
         <tr style="border-bottom:1px solid rgba(255,255,255,0.06)">
@@ -113,5 +114,6 @@ export const RecentVoiceTurnsTable: FC<{ turns: RecentVoiceTurn[] }> = ({ turns 
         )}
       </tbody>
     </table>
+    </div>
   </div>
 );
