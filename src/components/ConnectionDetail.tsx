@@ -1,7 +1,7 @@
 import type { FC } from "hono/jsx";
-import { LocalTime } from "./LocalTime";
+import { LocalTime } from "@/components/LocalTime";
 import type { Connection, Event, Span } from "@/db/schema";
-import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "./StatusBadge";
+import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "@/components/StatusBadge";
 
 const EVENT_ICONS: Record<string, string> = {
   message_sent: "→",

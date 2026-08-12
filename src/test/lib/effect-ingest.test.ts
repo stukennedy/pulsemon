@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { Effect, Either } from "effect";
 import { DatabaseError } from "@/lib/effect/errors";
 import { DEFAULT_INGEST_GOVERNANCE_CONFIG, type IngestGovernanceConfig } from "@/lib/effect/governance";
-import { postBatch, postConnection, postLogs } from "@/lib/effect/ingest";
+import { postBatch, postConnection, postLogs, postVoiceTurns } from "@/lib/effect/ingest";
 import type { ConnectionInsert, TelemetryBatchWrite, TelemetryRepository } from "@/lib/effect/repository";
 
 function createRepository(overrides: Partial<TelemetryRepository> = {}): TelemetryRepository {
@@ -33,6 +33,29 @@ function deps(repository: TelemetryRepository, governance?: IngestGovernanceConf
 }
 
 describe("Effect ingest service", () => {
+  it("rejects negative voice latency measurements before persistence", async () => {
+    let calls = 0;
+    const repository = createRepository({
+      insertVoiceTurns: () => Effect.sync(() => {
+        calls += 1;
+      }),
+    });
+
+    const result = await Effect.runPromise(Effect.either(
+      postVoiceTurns({ ...deps(repository), requiredScope: "voice" }, {
+        role: "agent",
+        asr_latency_ms: -1,
+      })
+    ));
+
+    expect(Either.isLeft(result)).toBe(true);
+    if (Either.isLeft(result)) {
+      expect(result.left._tag).toBe("ValidationError");
+      expect(result.left.message).toContain("asr_latency_ms");
+    }
+    expect(calls).toBe(0);
+  });
+
   it("injects the repository dependency and enriches connection records", async () => {
     const inserted: ConnectionInsert[] = [];
     const repository = createRepository({

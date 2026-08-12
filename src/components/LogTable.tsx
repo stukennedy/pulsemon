@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import { LocalTime } from "./LocalTime";
+import { LocalTime } from "@/components/LocalTime";
 import type { LogRecord } from "@/db/schema";
 
 const LEVEL_COLORS: Record<string, string> = {

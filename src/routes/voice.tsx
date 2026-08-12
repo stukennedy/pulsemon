@@ -15,7 +15,7 @@ import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const tenant = tenantScopeFromEnv(c.env);
-  // All three views read voice_turns — the canonical voice record. The old
+  // All three views read voice_turns - the canonical voice record. The old
   // page filtered SPANS by an asr./llm./tts. operation-name convention no
   // ingest enforces, so producers reporting turns saw empty cards forever.
   const result = await Effect.runPromise(

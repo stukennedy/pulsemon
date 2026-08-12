@@ -3,26 +3,26 @@
  *
  * The subtlety both P1 review findings circled: `trace_id` is NOT a turn
  * identifier. Some producers mint one trace per turn (then it happens to be
- * unique), others give every turn of a session the same session-level trace —
+ * unique), others give every turn of a session the same session-level trace -
  * both are valid ingest. Correlating naively by trace either duplicates every
  * record onto every turn (shared trace) or silently drops records (turn-id
  * producers). So:
  *
- *   1. `call.turn_id === turn.id`          — the canonical join, always wins.
- *   2. `call.turn_id === turn.trace_id`    — producers that use their own
+ *   1. `call.turn_id === turn.id`          - the canonical join, always wins.
+ *   2. `call.turn_id === turn.trace_id`    - producers that use their own
  *      per-turn id for both fields.
- *   3. trace match, ONLY when that trace is unique among the session's turns —
+ *   3. trace match, ONLY when that trace is unique among the session's turns -
  *      a shared trace is a session key, not a turn key, and matching on it
  *      would attach everything to everything.
  *   4. time window, for records carrying no join key at all.
  *
- * Pure module so the hierarchy is unit-testable — it decides whose payloads
+ * Pure module so the hierarchy is unit-testable - it decides whose payloads
  * and errors render under which turn, which is exactly the kind of quiet
  * misattribution a dashboard gets trusted about.
  */
 import type { AgentToolCall, Event, VoiceTurn } from "@/db/schema";
 
-/** Trace ids that appear on more than one turn — session keys, not turn keys. */
+/** Trace ids that appear on more than one turn - session keys, not turn keys. */
 export function sharedTraceIds(turns: readonly VoiceTurn[]): Set<string> {
   const seen = new Map<string, number>();
   for (const turn of turns) {
@@ -34,12 +34,12 @@ export function sharedTraceIds(turns: readonly VoiceTurn[]): Set<string> {
 /**
  * Effective end bound per turn. Ingest allows turns without `ended_at`; left
  * unbounded, every later record time-matches every preceding unfinished turn.
- * The next turn starting is the honest upper bound — under any turn-taking, a
+ * The next turn starting is the honest upper bound - under any turn-taking, a
  * turn is over once its successor begins. Only the LAST turn stays open.
  */
 /** Epoch ms, or null when unparseable. RFC 3339 permits offsets ("+01:00")
  *  and varying fractional precision, so lexical comparison of two valid
- *  timestamps does NOT preserve chronological order — every window check
+ *  timestamps does NOT preserve chronological order - every window check
  *  below compares instants. */
 function instant(value: string | null | undefined): number | null {
   if (!value) return null;
@@ -52,7 +52,7 @@ export interface TurnBound {
   /** True when `end` came from the next turn's start rather than `ended_at`.
    *  Inferred bounds are EXCLUSIVE: a record stamped exactly at the next
    *  turn's start belongs to that turn, not to both. A real `ended_at` stays
-   *  inclusive — a record at the closing instant is genuinely this turn's. */
+   *  inclusive - a record at the closing instant is genuinely this turn's. */
   readonly inferred: boolean;
 }
 
@@ -98,12 +98,12 @@ export interface TurnCorrelator {
    * Assign every record to AT MOST ONE turn, computed once over the whole
    * session. Two passes, and the order is the point:
    *
-   *   1. KEYED — `turn_id`, or a trace that uniquely identifies a turn.
-   *   2. WINDOW — only records the keyed pass left unassigned, matched
+   *   1. KEYED - `turn_id`, or a trace that uniquely identifies a turn.
+   *   2. WINDOW - only records the keyed pass left unassigned, matched
    *      against the FIRST turn (chronologically) whose window contains them.
    *
-   * Filtering per turn instead — each turn independently asking "is this
-   * mine?" — double-assigned records in sessions that MIX keying styles: an
+   * Filtering per turn instead - each turn independently asking "is this
+   * mine?" - double-assigned records in sessions that MIX keying styles: an
    * event carrying turn A's unique trace, timestamped inside unkeyed turn B's
    * window, matched A by trace and B by time and rendered on both cards.
    */
@@ -148,12 +148,13 @@ export function createTurnCorrelator(turns: readonly VoiceTurn[]): TurnCorrelato
       };
 
       for (const call of toolCalls) {
-        const keyed = keyedTurn(call.turn_id ?? null, call.trace_id ?? null);
+        const turnId = call.turn_id?.trim() || null;
+        const keyed = keyedTurn(turnId, call.trace_id ?? null);
         // Keyed wins outright; only a record NO key claims may fall back to
         // time. A shared/unresolvable trace carries no turn information, so it
         // is treated as unkeyed rather than rejected (rejecting dropped those
         // calls from every card).
-        put(tools, keyed ?? windowTurn(call.started_at), call);
+        put(tools, keyed ?? (turnId ? undefined : windowTurn(call.started_at)), call);
       }
       for (const event of events) {
         const keyed = keyedTurn(null, event.trace_id ?? null);

@@ -5,6 +5,7 @@ import { connections, events, metrics } from "@/db/schema";
 import { buildConnectionConditions } from "./facets";
 import type { ActiveTag, TenantScope } from "@/types";
 import { DEFAULT_TENANT_SCOPE } from "./tenant";
+import { queryVoiceLatencyPercentiles } from "@/lib/effect/voice-stats";
 
 export interface DashboardStats {
   activeConnections: number;
@@ -68,39 +69,12 @@ export async function queryDashboardStats(
     sql`${connections.started_at} > ${recentCutoff}`
   );
 
-  // Voice stage percentiles from voice_turns — the canonical voice record.
+  // Voice stage percentiles from voice_turns - the canonical voice record.
   // The span-derived categories below only cover producers that name spans
   // `asr.*`/`llm.*`/`tts.*`; the documented voice ingest path reports TURNS,
-  // and without this merge the dashboard's voice cards read "—" forever while
+  // and without this merge the dashboard's voice cards read empty forever while
   // the data sits in voice_turns.
-  const voicePercentiles = d1.prepare(
-    `WITH recent AS (
-       SELECT asr_latency_ms, llm_latency_ms, tts_latency_ms
-       FROM voice_turns
-       WHERE workspace_id = ?1 AND project_id = ?2
-       ORDER BY started_at DESC
-       LIMIT 2000
-     ),
-     stage_latency AS (
-       SELECT 'asr' AS category, asr_latency_ms AS ms FROM recent WHERE asr_latency_ms IS NOT NULL
-       UNION ALL
-       SELECT 'llm', llm_latency_ms FROM recent WHERE llm_latency_ms IS NOT NULL
-       UNION ALL
-       SELECT 'tts', tts_latency_ms FROM recent WHERE tts_latency_ms IS NOT NULL
-     ),
-     ranked AS (
-       SELECT category, ms,
-         ROW_NUMBER() OVER (PARTITION BY category ORDER BY ms ASC) AS rn,
-         COUNT(*) OVER (PARTITION BY category) AS total
-       FROM stage_latency
-     )
-     SELECT category,
-       MIN(CASE WHEN rn >= CAST(((total * 50) + 99) / 100 AS INTEGER) THEN ms END) AS p50,
-       MIN(CASE WHEN rn >= CAST(((total * 95) + 99) / 100 AS INTEGER) THEN ms END) AS p95,
-       MIN(CASE WHEN rn >= CAST(((total * 99) + 99) / 100 AS INTEGER) THEN ms END) AS p99
-     FROM ranked
-     GROUP BY category`
-  ).bind(tenant.workspace_id, tenant.project_id).all<LatencyPercentileRow>();
+  const voicePercentiles = queryVoiceLatencyPercentiles(d1, tenant);
 
   const latencyPercentiles = d1.prepare(
     `WITH span_latency AS (
@@ -176,10 +150,10 @@ export async function queryDashboardStats(
   }
   // voice_turns wins where both exist: it is per-turn truth, while a span
   // named `llm.generate` may be a coarser or duplicated view of the same call.
-  for (const row of voiceLatencyRows.results) {
-    if (row.p50 !== null) p50[row.category] = Number(row.p50);
-    if (row.p95 !== null) p95[row.category] = Number(row.p95);
-    if (row.p99 !== null) p99[row.category] = Number(row.p99);
+  for (const row of voiceLatencyRows) {
+    if (row.p50 !== null) p50[row.stage] = Number(row.p50);
+    if (row.p95 !== null) p95[row.stage] = Number(row.p95);
+    if (row.p99 !== null) p99[row.stage] = Number(row.p99);
   }
 
   const total = connSummary.total || 1;

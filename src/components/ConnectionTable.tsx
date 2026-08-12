@@ -1,7 +1,7 @@
 import type { FC } from "hono/jsx";
-import { LocalTime } from "./LocalTime";
+import { LocalTime } from "@/components/LocalTime";
 import type { Connection } from "@/db/schema";
-import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "./StatusBadge";
+import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "@/components/StatusBadge";
 
 export const ConnectionTable: FC<{ connections: Connection[]; total: number }> = ({ connections, total }) => (
   <div

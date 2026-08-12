@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { Effect } from "effect";
 import { createTestContext } from "../helpers";
-import { getRealtimeSession, queryVoiceSessionSummaries } from "@/lib/effect/sessions";
+import { getRealtimeSession, queryVoiceSessionSummaries, queryVoiceStageStats } from "@/lib/effect/sessions";
 import { DEFAULT_TENANT_SCOPE } from "@/lib/tenant";
 
 describe("Effect voice session queries", () => {
@@ -51,11 +51,21 @@ describe("Effect voice session queries", () => {
     expect(summaries[0].cost_usd).toBeCloseTo(0.03);
   });
 
+  it("excludes invalid historical negative latency samples from session averages", async () => {
+    const ctx = createTestContext();
+    ctx.seedVoiceTurn({ session_id: "session-a", asr_latency_ms: 120 });
+    ctx.seedVoiceTurn({ session_id: "session-a", asr_latency_ms: -400 });
+
+    const summaries = await Effect.runPromise(queryVoiceSessionSummaries(ctx.d1, DEFAULT_TENANT_SCOPE));
+
+    expect(summaries[0]?.avg_asr_latency_ms).toBe(120);
+  });
+
   it("returns a correlated session timeline", async () => {
     const ctx = createTestContext();
     ctx.seedConnection({ id: "conn-a", session_id: "session-a" });
-    ctx.seedVoiceTurn({ session_id: "session-a", connection_id: "conn-a", trace_id: "trace-a" });
-    ctx.seedAgentToolCall({ session_id: "session-a", connection_id: "conn-a", trace_id: "trace-a" });
+    ctx.seedVoiceTurn({ id: "turn-a", session_id: "session-a", connection_id: "conn-a", trace_id: "trace-a" });
+    ctx.seedAgentToolCall({ id: "tool-a", session_id: "session-a", connection_id: "conn-a", trace_id: "trace-a" });
     ctx.seedSpan({ trace_id: "trace-a", connection_id: "conn-a", operation: "llm.generate" });
     ctx.seedLog({ trace_id: "trace-a", connection_id: "conn-a", message: "tool completed" });
     ctx.seedEvent({ trace_id: "trace-a", connection_id: "conn-a", event_type: "message_sent" });
@@ -69,5 +79,48 @@ describe("Effect voice session queries", () => {
     expect(detail.spans).toHaveLength(1);
     expect(detail.logs).toHaveLength(1);
     expect(detail.events).toHaveLength(1);
+    expect(detail.turnsWithTelemetry).toEqual([
+      expect.objectContaining({
+        turn: expect.objectContaining({ id: "turn-a" }),
+        toolCalls: [expect.objectContaining({ id: "tool-a" })],
+        events: [expect.objectContaining({ event_type: "message_sent" })],
+      }),
+    ]);
+    expect(detail.waterfallRows).toHaveLength(1);
+    expect(detail.timeline.map((entry) => entry.type).sort()).toEqual([
+      "event", "log", "span", "tool", "turn",
+    ]);
+  });
+
+  it("includes a turn-keyed tool call even when it omits session_id", async () => {
+    const ctx = createTestContext();
+    ctx.seedVoiceTurn({
+      id: "turn-a",
+      session_id: "session-a",
+      trace_id: "trace-a",
+      started_at: "2026-08-12T08:00:00.000Z",
+    });
+    ctx.seedAgentToolCall({
+      id: "tool-a",
+      session_id: null,
+      turn_id: "turn-a",
+      started_at: "2026-08-12T08:00:01.000Z",
+    });
+
+    const detail = await Effect.runPromise(getRealtimeSession(ctx.d1, DEFAULT_TENANT_SCOPE, "session-a"));
+
+    expect(detail.toolCalls.map((call) => call.id)).toEqual(["tool-a"]);
+    expect(detail.turnsWithTelemetry[0]?.toolCalls.map((call) => call.id)).toEqual(["tool-a"]);
+  });
+
+  it("excludes invalid historical negative latencies from voice stage stats", async () => {
+    const ctx = createTestContext();
+    ctx.seedVoiceTurn({ id: "valid", asr_latency_ms: 120 });
+    ctx.seedVoiceTurn({ id: "invalid-history", asr_latency_ms: -400 });
+
+    const stats = await Effect.runPromise(queryVoiceStageStats(ctx.d1, DEFAULT_TENANT_SCOPE));
+    const asr = stats.find((stage) => stage.stage === "asr");
+
+    expect(asr).toMatchObject({ samples: 1, avg: 120, p50: 120, p95: 120 });
   });
 });

@@ -1,11 +1,11 @@
 import type { FC } from "hono/jsx";
-import type { AgentToolCall, Event, LogRecord, Span, VoiceTurn } from "@/db/schema";
+import type { AgentToolCall, Event, VoiceTurn } from "@/db/schema";
 import type { RealtimeSessionDetail, VoiceSessionSummary } from "@/lib/effect/sessions";
 import { voiceSessionStatus } from "@/lib/effect/sessions";
-import { buildWaterfall, STAGE_COLOURS, STAGE_LABELS, type WaterfallRow } from "@/lib/voice-waterfall";
-import { createTurnCorrelator, sharedTraceIds } from "@/lib/turn-correlation";
-import { durationColor, formatDuration, statusColor } from "./StatusBadge";
-import { LocalTime } from "./LocalTime";
+import { STAGE_COLOURS, STAGE_LABELS, type WaterfallRow } from "@/lib/effect/voice-waterfall";
+import { sharedTraceIds } from "@/lib/effect/turn-correlation";
+import { durationColor, formatDuration, statusColor } from "@/components/StatusBadge";
+import { LocalTime } from "@/components/LocalTime";
 
 function formatMoney(value: number) {
   if (value === 0) return "$0";
@@ -108,7 +108,7 @@ function pretty(raw: string | null): string | null {
 }
 
 const Legend: FC = () => (
-  <div class="flex items-center gap-4 px-4 py-2">
+  <div data-turn-waterfall-legend="true" class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 py-1">
     {(Object.keys(STAGE_COLOURS) as Array<keyof typeof STAGE_COLOURS>).map((stage) => (
       <span class="inline-flex items-center gap-1.5 text-[10px] font-mono" style="color:#64748b">
         <span class="w-2 h-2 rounded-sm" style={`background:${STAGE_COLOURS[stage]}`} />
@@ -133,12 +133,11 @@ const WaterfallBar: FC<{ row: WaterfallRow }> = ({ row }) => (
  * The session at a glance: one row per turn on a shared time scale, each row a
  * stacked bar of where that turn's time went. Rows link to the turn's card.
  */
-const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
-  const rows = buildWaterfall(turns);
+const TurnWaterfall: FC<{ rows: WaterfallRow[] }> = ({ rows }) => {
   return (
     <div class="rounded-lg overflow-hidden" style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06)">
-      <div class="px-4 py-2 flex items-center justify-between" style="border-bottom:1px solid rgba(255,255,255,0.05)">
-        <span style={HEADING}>Turn Waterfall</span>
+      <div class="px-4 py-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1" style="border-bottom:1px solid rgba(255,255,255,0.05)">
+        <span class="shrink-0" style={HEADING}>Turn Waterfall</span>
         <Legend />
       </div>
       <div class="px-4 py-3 space-y-1.5">
@@ -171,11 +170,11 @@ const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
   );
 };
 
-const ToolCallCard: FC<{ call: AgentToolCall }> = ({ call }) => {
+const ToolCallRow: FC<{ call: AgentToolCall }> = ({ call }) => {
   const input = pretty(call.input);
   const output = pretty(call.output);
   return (
-    <div class="rounded px-3 py-2 mt-2" style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05)">
+    <div data-tool-call-row="true" class="py-2 mt-2" style="border-top:1px solid rgba(255,255,255,0.05)">
       <div class="flex items-center justify-between gap-3">
         <span class="text-xs font-mono" style="color:#cbd5e1">🔧 {call.tool_name}</span>
         <span class={`text-[10px] font-mono ${statusColor(call.status)}`}>
@@ -246,7 +245,7 @@ const TurnCard: FC<{ turn: VoiceTurn; index: number; toolCalls: AgentToolCall[];
           {turn.transcript ?? "No transcript — producer is content-free (enable transcript reporting to see it here)"}
         </div>
         {toolCalls.map((call) => (
-          <ToolCallCard call={call} />
+          <ToolCallRow call={call} />
         ))}
         {events.length > 0 ? (
           <details class="mt-2">
@@ -268,16 +267,6 @@ const TurnCard: FC<{ turn: VoiceTurn; index: number; toolCalls: AgentToolCall[];
   );
 };
 
-function timelineItems(detail: RealtimeSessionDetail) {
-  return [
-    ...detail.turns.map((turn) => ({ type: "turn" as const, at: turn.started_at, item: turn })),
-    ...detail.toolCalls.map((call) => ({ type: "tool" as const, at: call.started_at, item: call })),
-    ...detail.spans.map((span) => ({ type: "span" as const, at: span.started_at, item: span })),
-    ...detail.logs.map((log) => ({ type: "log" as const, at: log.timestamp, item: log })),
-    ...detail.events.map((event) => ({ type: "event" as const, at: event.timestamp, item: event })),
-  ].sort((a, b) => a.at.localeCompare(b.at));
-}
-
 const TimelineItem: FC<{ title: string; time?: string | null; tone?: string; children?: unknown }> = (props) => (
   <div class="flex gap-3 py-3" style="border-top:1px solid rgba(255,255,255,0.04)">
     <div class="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" style={`background:${props.tone ?? "#64748b"}`} />
@@ -294,7 +283,7 @@ const TimelineItem: FC<{ title: string; time?: string | null; tone?: string; chi
 /** The legacy interleaved feed, kept behind the "All activity" tab: everything
  *  the session produced, flat, for when the shaped view hides too much. */
 const ActivityTimeline: FC<{ detail: RealtimeSessionDetail }> = ({ detail }) => {
-  const timeline = timelineItems(detail);
+  const timeline = detail.timeline;
   return (
     <div class="rounded-lg overflow-hidden px-4" style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06)">
       {timeline.length === 0 ? (
@@ -329,7 +318,7 @@ const ActivityTimeline: FC<{ detail: RealtimeSessionDetail }> = ({ detail }) => 
             );
           }
           if (entry.type === "span") {
-            const span = entry.item as Span;
+            const span = entry.item;
             return (
               <TimelineItem title={`span ${span.operation}`} time={span.started_at} tone={span.status === "ok" ? "#64748b" : "#fb7185"}>
                 <div class={`text-[10px] font-mono mt-1 ${statusColor(span.status)}`}>
@@ -339,14 +328,14 @@ const ActivityTimeline: FC<{ detail: RealtimeSessionDetail }> = ({ detail }) => 
             );
           }
           if (entry.type === "log") {
-            const log = entry.item as LogRecord;
+            const log = entry.item;
             return (
               <TimelineItem title={`${log.level} log`} time={log.timestamp} tone={log.level === "error" ? "#fb7185" : "#64748b"}>
                 <div class="text-xs mt-1" style="color:#94a3b8">{log.message}</div>
               </TimelineItem>
             );
           }
-          const event = entry.item as Event;
+          const event = entry.item;
           return (
             <TimelineItem title={`event ${event.event_type}`} time={event.timestamp} tone="#64748b">
               <div class="text-[10px] font-mono mt-1" style="color:#475569">{event.direction ?? "-"} / {event.size_bytes ?? 0} bytes</div>
@@ -374,9 +363,6 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
   tab = "turns",
 }) => {
   const summary = detail.summary;
-  // One exclusive assignment over the whole session — per-turn filtering
-  // double-assigned records when a session mixed keying styles.
-  const assigned = createTurnCorrelator(detail.turns).assign(detail.toolCalls, detail.events);
   const base = `/sessions/${encodeURIComponent(sessionId)}`;
   const tabs: Array<{ key: SessionDetailTab; label: string; href: string }> = [
     { key: "turns", label: "Turns", href: base },
@@ -436,19 +422,19 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
         <ActivityTimeline detail={detail} />
       ) : (
         <>
-          {detail.turns.length > 1 ? <TurnWaterfall turns={detail.turns} /> : null}
+          {detail.waterfallRows.length > 0 ? <TurnWaterfall rows={detail.waterfallRows} /> : null}
           <div class="space-y-2">
             {detail.turns.length === 0 ? (
               <div class="px-4 py-8 text-center text-xs font-mono rounded-lg" style="color:#334155;background:rgba(255,255,255,0.02)">
                 No turns recorded for this session
               </div>
             ) : (
-              detail.turns.map((turn, index) => (
+              detail.turnsWithTelemetry.map(({ turn, toolCalls, events }, index) => (
                 <TurnCard
                   turn={turn}
                   index={index}
-                  toolCalls={assigned.toolsFor(turn.id)}
-                  events={assigned.eventsFor(turn.id)}
+                  toolCalls={toolCalls}
+                  events={events}
                 />
               ))
             )}

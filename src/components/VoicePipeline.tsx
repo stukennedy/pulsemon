@@ -1,8 +1,8 @@
 import type { FC } from "hono/jsx";
 import type { RecentVoiceTurn, VoiceStageStats } from "@/lib/effect/sessions";
-import { durationColor, formatDuration } from "./StatusBadge";
-import { LocalTime } from "./LocalTime";
-import { STAGE_COLOURS } from "@/lib/voice-waterfall";
+import { durationColor, formatDuration } from "@/components/StatusBadge";
+import { LocalTime } from "@/components/LocalTime";
+import { STAGE_COLOURS } from "@/lib/effect/voice-waterfall";
 
 /**
  * Voice page header: per-stage latency cards + the recent-turns feed.

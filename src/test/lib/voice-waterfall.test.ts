@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildWaterfall } from "@/lib/voice-waterfall";
+import { buildWaterfall } from "@/lib/effect/voice-waterfall";
 import type { VoiceTurn } from "@/db/schema";
 
 /** Only the fields the layout reads. */
@@ -65,7 +65,7 @@ describe("buildWaterfall", () => {
   });
 
   it("never draws a negative tail when stages overlap oddly", () => {
-    // Stages can sum past duration_ms on turns assembled from partial data —
+    // Stages can sum past duration_ms on turns assembled from partial data -
     // a negative bar drawn to scale would be a lie.
     const [row] = buildWaterfall([
       turn({ asr_latency_ms: 500, llm_latency_ms: 900, tts_latency_ms: 300, duration_ms: 1000 }),
@@ -94,8 +94,10 @@ describe("buildWaterfall", () => {
 });
 
 describe("zero duration", () => {
-  it("treats an explicit zero duration as reported, not unknown", () => {
+  it("keeps an explicit zero out of semantic and stage totals", () => {
     const [row] = buildWaterfall([turn({ duration_ms: 0 })]);
     expect(row!.reportedMs).toBe(0);
+    expect(row!.totalMs).toBe(0);
+    expect(row!.segments).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 import type { FC } from "hono/jsx";
-import { LocalTime } from "./LocalTime";
+import { LocalTime } from "@/components/LocalTime";
 import type { Span } from "@/db/schema";
-import { StatusDot, durationColor, formatDuration } from "./StatusBadge";
+import { StatusDot, durationColor, formatDuration } from "@/components/StatusBadge";
 
 const SERVICE_COLORS: Record<string, string> = {
   "asr-service": "#22d3ee",

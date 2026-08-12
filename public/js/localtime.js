@@ -1,19 +1,19 @@
 /**
- * Render `<time datetime="…">` elements in the VIEWER's timezone.
+ * Render `<time datetime="...">` elements in the VIEWER's timezone.
  *
  * Every timestamp in Pulsemon is formatted server-side, and Workers run in
- * UTC — so the strings were UTC regardless of who was looking, which made
+ * UTC, so the strings were UTC regardless of who was looking, which made
  * "when did this happen" a mental arithmetic exercise. Components render a
  * UTC fallback inside <time> (truthful without JS); this script rewrites the
  * text locally.
  *
  * data-fmt selects the shape:
- *   time      → 09:28:55            (tables — same width as the old strings)
- *   datetime  → 12 Aug, 09:28:55    (detail views)
- *   date      → 12 Aug 2026
+ *   time      -> 09:28:55            (tables - same width as the old strings)
+ *   datetime  -> 12 Aug, 09:28:55    (detail views)
+ *   date      -> 12 Aug 2026
  *
  * Re-runs after HTMX swaps and hx-ws pushes via a MutationObserver on <body>
- * — one hook covers both, plus anything else that inserts markup.
+ * One hook covers both, plus anything else that inserts markup.
  */
 (function () {
   "use strict";

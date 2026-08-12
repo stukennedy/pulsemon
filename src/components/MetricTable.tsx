@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import { LocalTime } from "./LocalTime";
+import { LocalTime } from "@/components/LocalTime";
 import type { Metric } from "@/db/schema";
 import type { MetricSummary } from "@/lib/facets";
 

@@ -1,5 +1,5 @@
 import type { FC } from "hono/jsx";
-import { LocalTime } from "./LocalTime";
+import { LocalTime } from "@/components/LocalTime";
 import type { MetricSeriesResult } from "@/lib/effect/metric-series";
 
 function formatValue(value: number) {
