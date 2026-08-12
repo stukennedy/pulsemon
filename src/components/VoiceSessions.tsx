@@ -225,7 +225,10 @@ const TurnCard: FC<{ turn: VoiceTurn; index: number; toolCalls: AgentToolCall[];
         <span class="text-xs font-mono" style="color:#cbd5e1">
           {turn.role} turn #{turn.turn_index ?? index + 1}
           {turn.interruption ? <span class="ml-2" style="color:#f59e0b">⚡ interrupted</span> : null}
-          {turn.state && turn.state !== "success" && turn.state !== "completed" ? (
+          {turn.state && ["failed", "error"].includes(turn.state) ? (
+            // Only KNOWN-bad states read as errors; "the producer used a word
+            // we don't recognise" is not a failure and must not be dressed as
+            // one.
             <span class="ml-2" style="color:#fb7185">{turn.state}</span>
           ) : null}
         </span>

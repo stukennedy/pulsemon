@@ -98,7 +98,7 @@ export const RecentVoiceTurnsTable: FC<{ turns: RecentVoiceTurn[] }> = ({ turns 
             >
               <td class="px-4 py-2">
                 <div class="text-xs font-mono" style="color:#cbd5e1">
-                  {turn.trace_id ?? "—"}
+                  {turn.trace_id ?? turn.id}
                   {turn.interruption ? <span class="ml-2 text-[10px]" style="color:#f59e0b">⚡ interrupted</span> : null}
                 </div>
                 <div class="text-[10px] font-mono" style="color:#475569">{turn.session_id ?? "no session"}</div>
