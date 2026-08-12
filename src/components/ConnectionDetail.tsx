@@ -1,4 +1,5 @@
 import type { FC } from "hono/jsx";
+import { LocalTime } from "./LocalTime";
 import type { Connection, Event, Span } from "@/db/schema";
 import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "./StatusBadge";
 
@@ -119,9 +120,7 @@ export const ConnectionDetail: FC<{
             <span class="flex-1" />
             <span class="text-xs font-mono" style="color:#475569">
               {event.timestamp
-                ? new Date(event.timestamp).toLocaleTimeString("en-GB", {
-                    hour: "2-digit", minute: "2-digit", second: "2-digit", fractionalSecondDigits: 3,
-                  })
+                ? <LocalTime iso={event.timestamp} />
                 : "—"}
             </span>
           </div>

@@ -1,4 +1,5 @@
 import type { FC } from "hono/jsx";
+import { LocalTime } from "./LocalTime";
 import type { Metric } from "@/db/schema";
 import type { MetricSummary } from "@/lib/facets";
 
@@ -80,9 +81,7 @@ export const MetricTable: FC<{
                 <td class="px-4 py-2 text-xs font-mono" style="color:#64748b">{metric.metric_type}</td>
                 <td class="px-4 py-2 text-xs font-mono text-right" style="color:#e2e8f0">{formatValue(metric.value)}</td>
                 <td class="px-4 py-2 text-xs font-mono text-right" style="color:#475569">
-                  {new Date(metric.timestamp).toLocaleTimeString("en-GB", {
-                    hour: "2-digit", minute: "2-digit", second: "2-digit",
-                  })}
+                  {<LocalTime iso={metric.timestamp} />}
                 </td>
               </tr>
             ))

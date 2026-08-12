@@ -1,4 +1,5 @@
 import type { FC } from "hono/jsx";
+import { LocalTime } from "./LocalTime";
 import type { Connection } from "@/db/schema";
 import { TypeBadge, StatusDot, statusColor, durationColor, formatDuration } from "./StatusBadge";
 
@@ -62,9 +63,7 @@ export const ConnectionTable: FC<{ connections: Connection[]; total: number }> =
               </td>
               <td class="px-4 py-2 text-xs font-mono text-right" style="color:#475569">
                 {conn.started_at
-                  ? new Date(conn.started_at).toLocaleTimeString("en-GB", {
-                      hour: "2-digit", minute: "2-digit", second: "2-digit",
-                    })
+                  ? <LocalTime iso={conn.started_at} />
                   : "—"}
               </td>
             </tr>

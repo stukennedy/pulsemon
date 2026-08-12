@@ -1,4 +1,5 @@
 import type { FC } from "hono/jsx";
+import { LocalTime } from "./LocalTime";
 import type { MetricSeriesResult } from "@/lib/effect/metric-series";
 
 function formatValue(value: number) {
@@ -24,7 +25,7 @@ export const MetricTimeseriesChart: FC<{ series: MetricSeriesResult }> = ({ seri
           </div>
         </div>
         <div class="text-[10px] font-mono text-right" style="color:#64748b">
-          {new Date(series.from).toLocaleString("en-GB")} {"->"} {new Date(series.to).toLocaleString("en-GB")}
+          <LocalTime iso={series.from} fmt="datetime" /> {"->"} <LocalTime iso={series.to} fmt="datetime" />
         </div>
       </div>
 
