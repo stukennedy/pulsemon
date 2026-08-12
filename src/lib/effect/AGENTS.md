@@ -13,9 +13,11 @@ route handlers and scheduled jobs invoke.
 - `governance.ts`: redaction, allow/deny, caps, and telemetry safety.
 - `pressure.ts`, `cardinality.ts`: rate limiting, sampling, and cardinality
   budgets.
-- `query.ts`, `metric-series.ts`, `sessions.ts`: read-side query services.
-- `monitors.ts`, `alerts.ts`, `slos.ts`, `maintenance.ts`, `audit.ts`: operator
-  workflows and scheduled/admin behaviors.
+- `query.ts`, `metric-series.ts`, `sessions.ts`, `session-compare.ts`:
+  read-side query services.
+- `monitors.ts`, `alerts.ts`, `slos.ts`, `voice-slo.ts`, `maintenance.ts`,
+  `audit.ts`: operator workflows and scheduled/admin behaviors (`voice-slo.ts`
+  is the registry used by explicitly voice-sourced SLO definitions).
 - `auth.ts`: ingest API key and scope authorization.
 
 ## Service Shape

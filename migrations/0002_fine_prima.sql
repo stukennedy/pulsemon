@@ -1,0 +1,1 @@
+CREATE INDEX `idx_agent_tool_calls_tenant_started` ON `agent_tool_calls` (`workspace_id`,`project_id`,`started_at`);

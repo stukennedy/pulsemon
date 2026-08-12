@@ -7,6 +7,7 @@ import { Nav } from "@/components/Nav";
 import { SloView } from "@/components/SloTable";
 import { errorStatus } from "@/lib/effect/errors";
 import { createSloDefinition, evaluateAndPersistSlos } from "@/lib/effect/slos";
+import { VOICE_SLO_SOURCES } from "@/lib/effect/voice-slo";
 import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
@@ -22,7 +23,14 @@ export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   return c.render(
     <main class="min-h-screen px-5 py-6 max-w-7xl mx-auto">
       <Nav active="/slos" />
-      <SloView definitions={result.right.definitions} evaluations={result.right.evaluations} />
+      <SloView
+        definitions={result.right.definitions}
+        evaluations={result.right.evaluations}
+        voiceMetricSuggestions={VOICE_SLO_SOURCES.map((source) => ({
+          value: source.metric_name,
+          label: source.label,
+        }))}
+      />
     </main>
   );
 };
@@ -36,6 +44,7 @@ export const onRequestPost = async (c: Context<{ Bindings: Env }>) => {
     createSloDefinition(c.env.DB, tenantScopeFromEnv(c.env), {
       name: String(form.get("name") ?? ""),
       metric_name: String(form.get("metric_name") ?? ""),
+      source: String(form.get("source") ?? ""),
       service: String(form.get("service") ?? ""),
       objective_percent: Number(form.get("objective_percent")),
       threshold: Number(form.get("threshold")),

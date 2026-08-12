@@ -15,6 +15,20 @@
       "when": 1786531098867,
       "tag": "0001_overconfident_firestar",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1786546851361,
+      "tag": "0002_fine_prima",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786547056997,
+      "tag": "0003_true_tombstone",
+      "breakpoints": true
     }
   ]
 }

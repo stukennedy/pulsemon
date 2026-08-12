@@ -17,7 +17,8 @@ function statusColor(evaluation: SloEvaluation) {
 export const SloView: FC<{
   definitions: readonly SloDefinition[];
   evaluations: readonly SloEvaluation[];
-}> = ({ definitions, evaluations }) => (
+  voiceMetricSuggestions: readonly { value: string; label: string }[];
+}> = ({ definitions, evaluations, voiceMetricSuggestions }) => (
   <div class="space-y-4 fade-in">
     <section
       class="p-4"
@@ -30,7 +31,16 @@ export const SloView: FC<{
 
       <form method="post" action="/slos" class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
         <input name="name" placeholder="SLO name" required style={FIELD_STYLE} />
-        <input name="metric_name" placeholder="Metric name" required style={FIELD_STYLE} />
+        <select name="source" required style={FIELD_STYLE}>
+          <option value="metrics" selected>Metrics</option>
+          <option value="voice">Voice telemetry</option>
+        </select>
+        <input name="metric_name" placeholder="Metric name" list="slo-metric-suggestions" required style={FIELD_STYLE} />
+        <datalist id="slo-metric-suggestions">
+          {voiceMetricSuggestions.map((suggestion) => (
+            <option value={suggestion.value}>{suggestion.label}</option>
+          ))}
+        </datalist>
         <input name="service" placeholder="Service filter" style={FIELD_STYLE} />
         <input name="objective_percent" type="number" step="0.001" min="0.001" max="99.999" value="99" required style={FIELD_STYLE} />
         <input name="threshold" type="number" step="0.001" min="0" placeholder="Good event threshold" required style={FIELD_STYLE} />
@@ -43,6 +53,9 @@ export const SloView: FC<{
           Add SLO
         </button>
       </form>
+      <p class="text-[11px] font-mono mt-2" style="color:#64748b">
+        Choose Voice telemetry for the suggested voice.turns.* and voice.tools.* objectives (good event = value &lt;= threshold; use threshold 0 for interruption/error flags). Metrics always evaluates the named metric, even when its name overlaps a voice suggestion.
+      </p>
     </section>
 
     <div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">
@@ -55,7 +68,7 @@ export const SloView: FC<{
             <div>
               <h3 class="text-sm font-mono" style="color:#e2e8f0">{evaluation.name}</h3>
               <div class="text-[11px] font-mono mt-1" style="color:#64748b">
-                {evaluation.total_events.toLocaleString()} events · {evaluation.window_minutes}m
+                {evaluation.total_events.toLocaleString()} events | {evaluation.window_minutes}m
               </div>
             </div>
             <div class="text-right">

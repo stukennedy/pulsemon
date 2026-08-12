@@ -1,0 +1,1 @@
+ALTER TABLE `slo_definitions` ADD `source` text DEFAULT 'metrics' NOT NULL;
