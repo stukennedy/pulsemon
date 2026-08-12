@@ -298,6 +298,7 @@ const ActivityTimeline: FC<{ detail: RealtimeSessionDetail }> = ({ detail }) => 
                 time={turn.started_at}
                 tone={turn.interruption ? "#f59e0b" : "#818cf8"}
               >
+                {turn.transcript ? <div class="text-xs mt-1" style="color:#94a3b8">{turn.transcript}</div> : null}
                 <div class="text-[10px] font-mono mt-1" style="color:#475569">
                   ASR {formatDuration(turn.asr_latency_ms)} / LLM {formatDuration(turn.llm_latency_ms)} / TTS {formatDuration(turn.tts_latency_ms)}
                   {turn.interruption ? " / interrupted" : ""}

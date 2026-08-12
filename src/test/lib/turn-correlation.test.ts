@@ -70,10 +70,11 @@ describe("session-level traces (every turn shares one trace)", () => {
     expect(sharedTraceIds(turns).has("sess_t")).toBe(true);
   });
 
-  it("does NOT attach a shared-trace call to every turn — time decides nothing here", () => {
+  it("does not attach a shared-trace call to EVERY turn — time picks exactly one", () => {
     const calls = [call({ trace_id: "sess_t", started_at: "2026-08-12T08:00:05.000Z" })];
-    // trace_id present but shared → not a turn key → no trace attachment.
-    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(0);
+    // Shared trace carries no turn information, so the window decides — but it
+    // must land on one turn, not all of them.
+    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(1);
     expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(0);
   });
 
@@ -111,6 +112,41 @@ describe("unkeyed records", () => {
   });
 });
 
+describe("window boundaries", () => {
+  it("an inferred bound is EXCLUSIVE — a record at the next turn's start belongs to that turn", () => {
+    const turns = [
+      turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: null }),
+      turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: null }),
+    ];
+    const correlator = createTurnCorrelator(turns);
+    const onBoundary = [call({ started_at: "2026-08-12T08:01:00.000Z" })];
+    expect(correlator.toolsForTurn(turns[0]!, onBoundary)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[1]!, onBoundary)).toHaveLength(1);
+  });
+
+  it("an explicit ended_at stays INCLUSIVE — the closing instant is this turn's", () => {
+    const turns = [turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" })];
+    const onEnd = [call({ started_at: "2026-08-12T08:00:10.000Z" })];
+    expect(createTurnCorrelator(turns).toolsForTurn(turns[0]!, onEnd)).toHaveLength(1);
+  });
+});
+
+describe("shared-trace tool calls without turn_id", () => {
+  it("fall back to time rather than being dropped from every card", () => {
+    // Round 3 P1: producers copying a session-level trace onto each call have
+    // no turn_id, and rejecting them outright meant their payloads appeared
+    // nowhere in the Turns view.
+    const turns = [
+      turn({ id: "vt_1", trace_id: "sess_t", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" }),
+      turn({ id: "vt_2", trace_id: "sess_t", started_at: "2026-08-12T08:01:00.000Z", ended_at: "2026-08-12T08:01:10.000Z" }),
+    ];
+    const correlator = createTurnCorrelator(turns);
+    const calls = [call({ trace_id: "sess_t", started_at: "2026-08-12T08:01:05.000Z" })];
+    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(1);
+  });
+});
+
 describe("turns without ended_at (ingest allows them)", () => {
   it("bounds an unfinished turn at the NEXT turn's start, not year 9999", () => {
     // Codex round 2: left open-ended, every later record time-matched every
@@ -131,7 +167,7 @@ describe("turns without ended_at (ingest allows them)", () => {
       turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: null }),
     ];
     const ends = effectiveEnds(turns);
-    expect(ends.get("vt_1")).toBe("2026-08-12T08:01:00.000Z");
-    expect(ends.get("vt_2")).toBe("9999");
+    expect(ends.get("vt_1")).toEqual({ end: "2026-08-12T08:01:00.000Z", inferred: true });
+    expect(ends.get("vt_2")).toEqual({ end: "9999", inferred: true });
   });
 });

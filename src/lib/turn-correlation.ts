@@ -37,19 +37,31 @@ export function sharedTraceIds(turns: readonly VoiceTurn[]): Set<string> {
  * The next turn starting is the honest upper bound — under any turn-taking, a
  * turn is over once its successor begins. Only the LAST turn stays open.
  */
-export function effectiveEnds(turns: readonly VoiceTurn[]): Map<string, string> {
+export interface TurnBound {
+  readonly end: string;
+  /** True when `end` came from the next turn's start rather than `ended_at`.
+   *  Inferred bounds are EXCLUSIVE: a record stamped exactly at the next
+   *  turn's start belongs to that turn, not to both. A real `ended_at` stays
+   *  inclusive — a record at the closing instant is genuinely this turn's. */
+  readonly inferred: boolean;
+}
+
+export function effectiveEnds(turns: readonly VoiceTurn[]): Map<string, TurnBound> {
   const ordered = [...turns].sort((a, b) => (a.started_at ?? "").localeCompare(b.started_at ?? ""));
-  const ends = new Map<string, string>();
+  const ends = new Map<string, TurnBound>();
   for (let i = 0; i < ordered.length; i++) {
     const turn = ordered[i]!;
-    ends.set(turn.id, turn.ended_at ?? ordered[i + 1]?.started_at ?? "9999");
+    if (turn.ended_at) ends.set(turn.id, { end: turn.ended_at, inferred: false });
+    else ends.set(turn.id, { end: ordered[i + 1]?.started_at ?? "9999", inferred: true });
   }
   return ends;
 }
 
-function inWindow(at: string, turn: VoiceTurn, ends: Map<string, string>): boolean {
+function inWindow(at: string, turn: VoiceTurn, ends: Map<string, TurnBound>): boolean {
   if (!turn.started_at) return false;
-  return at >= turn.started_at && at <= (ends.get(turn.id) ?? turn.ended_at ?? "9999");
+  const bound = ends.get(turn.id) ?? { end: turn.ended_at ?? "9999", inferred: !turn.ended_at };
+  if (at < turn.started_at) return false;
+  return bound.inferred ? at < bound.end : at <= bound.end;
 }
 
 export interface TurnCorrelator {
@@ -66,9 +78,14 @@ export function createTurnCorrelator(turns: readonly VoiceTurn[]): TurnCorrelato
     toolsForTurn(turn, toolCalls) {
       return toolCalls.filter((call) => {
         if (call.turn_id) return call.turn_id === turn.id || call.turn_id === turn.trace_id;
-        if (call.trace_id) {
-          return call.trace_id === turn.trace_id && !!turn.trace_id && !shared.has(turn.trace_id);
+        // A trace that uniquely identifies this turn is a real join.
+        if (call.trace_id && turn.trace_id && !shared.has(turn.trace_id)) {
+          return call.trace_id === turn.trace_id;
         }
+        // Otherwise the trace carries no turn information — a session-level
+        // trace copied onto every call, or a trace we cannot resolve. Time is
+        // the remaining signal; rejecting outright dropped these calls from
+        // every card (they only survived under All activity).
         return inWindow(call.started_at, turn, ends);
       });
     },
