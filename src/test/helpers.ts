@@ -81,7 +81,7 @@ export interface TestContext {
   seedVoiceTurn: (overrides?: Partial<{
     id: string; connection_id: string; session_id: string; trace_id: string; turn_index: number;
     role: string; started_at: string; transcript: string; interruption: number;
-    asr_latency_ms: number; llm_latency_ms: number; tts_latency_ms: number;
+    audio_latency_ms: number; asr_latency_ms: number; llm_latency_ms: number; tts_latency_ms: number;
     input_tokens: number; output_tokens: number; cost_usd: number;
     workspace_id: string; project_id: string;
   }>) => void;
@@ -278,9 +278,9 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
     sqlite.prepare(`
       INSERT INTO voice_turns (
         id, workspace_id, project_id, connection_id, session_id, trace_id, turn_index, role, started_at,
-        transcript, interruption, asr_latency_ms, llm_latency_ms, tts_latency_ms, input_tokens, output_tokens, cost_usd
+        transcript, interruption, audio_latency_ms, asr_latency_ms, llm_latency_ms, tts_latency_ms, input_tokens, output_tokens, cost_usd
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       overrides?.id ?? `turn-${seq}`,
       overrides?.workspace_id ?? "default",
@@ -293,6 +293,7 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
       overrides?.started_at ?? new Date(Date.now() - seq * 1000).toISOString(),
       overrides?.transcript ?? "hello",
       overrides?.interruption ?? 0,
+      overrides?.audio_latency_ms ?? null,
       overrides?.asr_latency_ms ?? null,
       overrides?.llm_latency_ms ?? null,
       overrides?.tts_latency_ms ?? null,

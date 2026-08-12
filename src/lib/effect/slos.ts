@@ -2,6 +2,7 @@ import { Effect } from "effect";
 import type { SloDefinitionRecord, SloEvaluationRecord } from "@/db/schema";
 import type { TenantScope } from "@/types";
 import { DatabaseError, ValidationError } from "./errors";
+import { resolveVoiceSloSource, type VoiceSloSource } from "./voice-slo";
 
 export type SloDefinition = Omit<SloDefinitionRecord, "enabled"> & {
   readonly enabled: boolean;
@@ -36,6 +37,45 @@ const DEFAULT_SLOS: readonly Omit<
     service: null,
     objective_percent: 99,
     threshold: 1500,
+    window_minutes: 1440,
+    enabled: true,
+  },
+  // Voice presets computed straight from voice_turns / agent_tool_calls via
+  // the reserved metric-name namespace in voice-slo.ts — no instrumentation
+  // has to emit a separate metric for these to work.
+  {
+    id: "slo.voice_reply_audible",
+    // "95% of turns audible within 1.5s" is the ratio framing of
+    // "p95 release→audible reply under 1.5s".
+    name: "Voice reply audible within 1.5s",
+    metric_name: "voice.turns.audio_latency_ms",
+    service: null,
+    objective_percent: 95,
+    threshold: 1500,
+    window_minutes: 1440,
+    enabled: true,
+  },
+  {
+    id: "slo.voice_uninterrupted_turns",
+    // interruption is a 0/1 flag; threshold 0 means a good event is an
+    // uninterrupted turn, so objective 95% caps the interruption rate at 5%.
+    name: "Voice turns without interruption",
+    metric_name: "voice.turns.interruption",
+    service: null,
+    objective_percent: 95,
+    threshold: 0,
+    window_minutes: 1440,
+    enabled: true,
+  },
+  {
+    id: "slo.agent_tool_success",
+    // Same flag framing over agent_tool_calls: objective 99% caps the tool
+    // error rate at 1%.
+    name: "Agent tool calls succeed",
+    metric_name: "voice.tools.error",
+    service: null,
+    objective_percent: 99,
+    threshold: 0,
     window_minutes: 1440,
     enabled: true,
   },
@@ -101,6 +141,14 @@ function validateInput(input: SloDefinitionInput): Effect.Effect<SloDefinitionIn
     }
     if (!Number.isInteger(input.window_minutes) || input.window_minutes < 1 || input.window_minutes > 43_200) {
       return yield* Effect.fail(new ValidationError({ message: "window_minutes must be an integer between 1 and 43200" }));
+    }
+    const metricName = cleanString(input.metric_name);
+    if (metricName && resolveVoiceSloSource(metricName) && cleanString(input.service)) {
+      // voice_turns / agent_tool_calls carry no service column, so a service
+      // filter would be silently ignored — reject it instead.
+      return yield* Effect.fail(new ValidationError({
+        message: "service filter is not supported for voice objectives",
+      }));
     }
     return input;
   });
@@ -222,12 +270,78 @@ export function createSloDefinition(
   });
 }
 
+function evaluationFromCounts(
+  tenant: TenantScope,
+  definition: SloDefinition,
+  evaluatedAt: string,
+  row: { total: number; good: number | null } | null
+): SloEvaluation {
+  const total = Number(row?.total ?? 0);
+  const good = Number(row?.good ?? 0);
+  const attainment = total === 0 ? null : (good / total) * 100;
+  const errorBudget = attainment === null
+    ? null
+    : ((attainment - definition.objective_percent) / (100 - definition.objective_percent)) * 100;
+
+  return {
+    id: `${tenant.workspace_id}:${tenant.project_id}:${definition.id}:${evaluatedAt}`,
+    workspace_id: tenant.workspace_id,
+    project_id: tenant.project_id,
+    slo_id: definition.id,
+    name: definition.name,
+    objective_percent: definition.objective_percent,
+    attainment_percent: attainment,
+    error_budget_remaining_percent: errorBudget === null ? null : Math.max(0, Math.min(100, errorBudget)),
+    good_events: good,
+    total_events: total,
+    window_minutes: definition.window_minutes,
+    evaluated_at: evaluatedAt,
+  };
+}
+
+function evaluateVoiceDefinition(
+  db: D1Database,
+  tenant: TenantScope,
+  definition: SloDefinition,
+  source: VoiceSloSource,
+  evaluatedAt: string
+): Effect.Effect<SloEvaluation, DatabaseError> {
+  return dbEffect(async () => {
+    // Every SQL fragment here comes from the hard-coded source registry;
+    // threshold, tenant and window cutoff are bound parameters. The window
+    // cutoff bounds the scan to the recent window (compound tenant+started_at
+    // indexes back both tables).
+    const row = await db.prepare(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN ${source.valueSql} <= ? THEN 1 ELSE 0 END) AS good
+       FROM ${source.table}
+       WHERE workspace_id = ?
+         AND project_id = ?
+         AND started_at >= ?
+         ${source.eligibleSql ? `AND ${source.eligibleSql}` : ""}`
+    ).bind(
+      definition.threshold,
+      tenant.workspace_id,
+      tenant.project_id,
+      windowCutoffIso(definition.window_minutes)
+    ).first<{ total: number; good: number | null }>();
+
+    return evaluationFromCounts(tenant, definition, evaluatedAt, row);
+  });
+}
+
 function evaluateDefinition(
   db: D1Database,
   tenant: TenantScope,
   definition: SloDefinition,
   evaluatedAt: string
 ): Effect.Effect<SloEvaluation, DatabaseError> {
+  const voiceSource = resolveVoiceSloSource(definition.metric_name);
+  if (voiceSource) {
+    return evaluateVoiceDefinition(db, tenant, definition, voiceSource, evaluatedAt);
+  }
+
   return dbEffect(async () => {
     const conditions = [
       "workspace_id = ?",
@@ -254,27 +368,7 @@ function evaluateDefinition(
        WHERE ${conditions.join(" AND ")}`
     ).bind(definition.threshold, ...bindings).first<{ total: number; good: number | null }>();
 
-    const total = Number(row?.total ?? 0);
-    const good = Number(row?.good ?? 0);
-    const attainment = total === 0 ? null : (good / total) * 100;
-    const errorBudget = attainment === null
-      ? null
-      : ((attainment - definition.objective_percent) / (100 - definition.objective_percent)) * 100;
-
-    return {
-      id: `${tenant.workspace_id}:${tenant.project_id}:${definition.id}:${evaluatedAt}`,
-      workspace_id: tenant.workspace_id,
-      project_id: tenant.project_id,
-      slo_id: definition.id,
-      name: definition.name,
-      objective_percent: definition.objective_percent,
-      attainment_percent: attainment,
-      error_budget_remaining_percent: errorBudget === null ? null : Math.max(0, Math.min(100, errorBudget)),
-      good_events: good,
-      total_events: total,
-      window_minutes: definition.window_minutes,
-      evaluated_at: evaluatedAt,
-    };
+    return evaluationFromCounts(tenant, definition, evaluatedAt, row);
   });
 }
 

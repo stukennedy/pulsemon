@@ -1,5 +1,6 @@
 import type { FC } from "hono/jsx";
 import type { SloDefinition, SloEvaluation } from "@/lib/effect/slos";
+import { VOICE_SLO_SOURCES } from "@/lib/effect/voice-slo";
 
 const FIELD_STYLE = "width:100%;background:rgba(15,23,42,0.92);border:1px solid rgba(148,163,184,0.18);border-radius:6px;color:#e2e8f0;padding:9px 10px;font-size:12px";
 
@@ -30,7 +31,12 @@ export const SloView: FC<{
 
       <form method="post" action="/slos" class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr))">
         <input name="name" placeholder="SLO name" required style={FIELD_STYLE} />
-        <input name="metric_name" placeholder="Metric name" required style={FIELD_STYLE} />
+        <input name="metric_name" placeholder="Metric name" list="slo-metric-suggestions" required style={FIELD_STYLE} />
+        <datalist id="slo-metric-suggestions">
+          {VOICE_SLO_SOURCES.map((source) => (
+            <option value={source.metric_name}>{source.label}</option>
+          ))}
+        </datalist>
         <input name="service" placeholder="Service filter" style={FIELD_STYLE} />
         <input name="objective_percent" type="number" step="0.001" min="0.001" max="99.999" value="99" required style={FIELD_STYLE} />
         <input name="threshold" type="number" step="0.001" min="0" placeholder="Good event threshold" required style={FIELD_STYLE} />
@@ -43,6 +49,9 @@ export const SloView: FC<{
           Add SLO
         </button>
       </form>
+      <p class="text-[11px] font-mono mt-2" style="color:#64748b">
+        voice.turns.* and voice.tools.* objectives are computed from voice-turn telemetry (good event = value ≤ threshold; use threshold 0 for the interruption/error flags). Other metric names evaluate against the metrics table.
+      </p>
     </section>
 
     <div class="grid gap-3" style="grid-template-columns:repeat(auto-fit,minmax(260px,1fr))">

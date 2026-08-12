@@ -23,6 +23,7 @@ import * as ingest from './routes/api/ingest';
 import * as connections_id from './routes/connections/[id]';
 import * as sessions_id from './routes/sessions/[id]';
 import * as traces_id from './routes/traces/[id]';
+import * as voice_compare from './routes/voice/compare';
 import * as connections_index from './routes/connections';
 import * as logs_index from './routes/logs';
 import * as metrics_index from './routes/metrics';
@@ -70,6 +71,7 @@ export const loadRoutes = <T extends Env>(app: Hono<T>) => {
 	app.get('/connections/:id', connections_id.onRequestGet);
 	app.get('/sessions/:id', sessions_id.onRequestGet);
 	app.get('/traces/:id', traces_id.onRequestGet);
+	app.get('/voice/compare', voice_compare.onRequestGet);
 	app.get('/connections', connections_index.onRequestGet);
 	app.get('/logs', logs_index.onRequestGet);
 	app.get('/metrics', metrics_index.onRequestGet);

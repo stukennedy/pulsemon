@@ -151,9 +151,8 @@ export const voice_turns = sqliteTable("voice_turns", {
   index("idx_voice_turns_trace").on(table.trace_id),
   index("idx_voice_turns_started").on(table.started_at),
   index("idx_voice_turns_tenant_session").on(table.workspace_id, table.project_id, table.session_id),
-  // Recent-turns feed and the per-stage percentile scans both filter by tenant
-  // and take the newest rows; without this they sort the tenant's whole
-  // history before applying LIMIT.
+  // Recent-turns feeds, stage percentiles, SLO/monitor evaluations, and
+  // baseline queries all scan by tenant and recency.
   index("idx_voice_turns_tenant_started").on(table.workspace_id, table.project_id, table.started_at),
 ]);
 
@@ -184,6 +183,8 @@ export const agent_tool_calls = sqliteTable("agent_tool_calls", {
   index("idx_agent_tool_calls_tool").on(table.tool_name),
   index("idx_agent_tool_calls_status").on(table.status),
   index("idx_agent_tool_calls_tenant_trace").on(table.workspace_id, table.project_id, table.trace_id),
+  // Same recency pattern as voice_turns: tool error-rate SLO/monitor windows.
+  index("idx_agent_tool_calls_tenant_started").on(table.workspace_id, table.project_id, table.started_at),
 ]);
 
 export const metric_rollups_1m = sqliteTable("metric_rollups_1m", {
