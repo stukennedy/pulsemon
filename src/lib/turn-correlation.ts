@@ -31,35 +31,59 @@ export function sharedTraceIds(turns: readonly VoiceTurn[]): Set<string> {
   return new Set([...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id));
 }
 
-function inWindow(at: string, turn: VoiceTurn): boolean {
+/**
+ * Effective end bound per turn. Ingest allows turns without `ended_at`; left
+ * unbounded, every later record time-matches every preceding unfinished turn.
+ * The next turn starting is the honest upper bound — under any turn-taking, a
+ * turn is over once its successor begins. Only the LAST turn stays open.
+ */
+export function effectiveEnds(turns: readonly VoiceTurn[]): Map<string, string> {
+  const ordered = [...turns].sort((a, b) => (a.started_at ?? "").localeCompare(b.started_at ?? ""));
+  const ends = new Map<string, string>();
+  for (let i = 0; i < ordered.length; i++) {
+    const turn = ordered[i]!;
+    ends.set(turn.id, turn.ended_at ?? ordered[i + 1]?.started_at ?? "9999");
+  }
+  return ends;
+}
+
+function inWindow(at: string, turn: VoiceTurn, ends: Map<string, string>): boolean {
   if (!turn.started_at) return false;
-  return at >= turn.started_at && at <= (turn.ended_at ?? "9999");
+  return at >= turn.started_at && at <= (ends.get(turn.id) ?? turn.ended_at ?? "9999");
 }
 
-export function toolsForTurn(
-  turn: VoiceTurn,
-  toolCalls: readonly AgentToolCall[],
-  shared: Set<string>
-): AgentToolCall[] {
-  return toolCalls.filter((call) => {
-    if (call.turn_id) return call.turn_id === turn.id || call.turn_id === turn.trace_id;
-    if (call.trace_id) {
-      return call.trace_id === turn.trace_id && !!turn.trace_id && !shared.has(turn.trace_id);
-    }
-    return inWindow(call.started_at, turn);
-  });
+export interface TurnCorrelator {
+  toolsForTurn(turn: VoiceTurn, toolCalls: readonly AgentToolCall[]): AgentToolCall[];
+  eventsForTurn(turn: VoiceTurn, events: readonly Event[]): Event[];
 }
 
-export function eventsForTurn(turn: VoiceTurn, events: readonly Event[], shared: Set<string>): Event[] {
-  const traceIsTurnKey = !!turn.trace_id && !shared.has(turn.trace_id);
-  return events.filter((event) => {
-    if (traceIsTurnKey && event.trace_id) return event.trace_id === turn.trace_id;
-    if (!event.trace_id || !traceIsTurnKey) {
-      // Shared-trace (or unkeyed) events: the time window is the only honest
-      // association left. Events outside every turn's window belong to the
-      // session view, not to a turn card.
-      return inWindow(event.timestamp, turn);
-    }
-    return false;
-  });
+/** Build once per session view — precomputes the shared-trace set and the
+ *  effective end bounds the per-turn filters depend on. */
+export function createTurnCorrelator(turns: readonly VoiceTurn[]): TurnCorrelator {
+  const shared = sharedTraceIds(turns);
+  const ends = effectiveEnds(turns);
+  return {
+    toolsForTurn(turn, toolCalls) {
+      return toolCalls.filter((call) => {
+        if (call.turn_id) return call.turn_id === turn.id || call.turn_id === turn.trace_id;
+        if (call.trace_id) {
+          return call.trace_id === turn.trace_id && !!turn.trace_id && !shared.has(turn.trace_id);
+        }
+        return inWindow(call.started_at, turn, ends);
+      });
+    },
+    eventsForTurn(turn, events) {
+      const traceIsTurnKey = !!turn.trace_id && !shared.has(turn.trace_id);
+      return events.filter((event) => {
+        if (traceIsTurnKey && event.trace_id) return event.trace_id === turn.trace_id;
+        if (!event.trace_id || !traceIsTurnKey) {
+          // Shared-trace (or unkeyed) events: the time window is the only
+          // honest association left. Events outside every turn's window belong
+          // to the session view, not to a turn card.
+          return inWindow(event.timestamp, turn, ends);
+        }
+        return false;
+      });
+    },
+  };
 }

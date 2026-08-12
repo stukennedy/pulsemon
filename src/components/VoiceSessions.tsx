@@ -3,7 +3,7 @@ import type { AgentToolCall, Event, LogRecord, Span, VoiceTurn } from "@/db/sche
 import type { RealtimeSessionDetail, VoiceSessionSummary } from "@/lib/effect/sessions";
 import { voiceSessionStatus } from "@/lib/effect/sessions";
 import { buildWaterfall, STAGE_COLOURS, STAGE_LABELS, type WaterfallRow } from "@/lib/voice-waterfall";
-import { eventsForTurn, sharedTraceIds, toolsForTurn } from "@/lib/turn-correlation";
+import { createTurnCorrelator, sharedTraceIds } from "@/lib/turn-correlation";
 import { durationColor, formatDuration, statusColor } from "./StatusBadge";
 import { LocalTime } from "./LocalTime";
 
@@ -362,7 +362,7 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
   tab = "turns",
 }) => {
   const summary = detail.summary;
-  const shared = sharedTraceIds(detail.turns);
+  const correlator = createTurnCorrelator(detail.turns);
   const base = `/sessions/${encodeURIComponent(sessionId)}`;
   const tabs: Array<{ key: SessionDetailTab; label: string; href: string }> = [
     { key: "turns", label: "Turns", href: base },
@@ -433,8 +433,8 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
                 <TurnCard
                   turn={turn}
                   index={index}
-                  toolCalls={toolsForTurn(turn, detail.toolCalls, shared)}
-                  events={eventsForTurn(turn, detail.events, shared)}
+                  toolCalls={correlator.toolsForTurn(turn, detail.toolCalls)}
+                  events={correlator.eventsForTurn(turn, detail.events)}
                 />
               ))
             )}
@@ -445,7 +445,7 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
           <script
             dangerouslySetInnerHTML={{
               __html:
-                "(function(){function open(){var h=location.hash.slice(1);if(!h)return;var el=document.getElementById(h);if(el&&el.tagName==='DETAILS'){el.open=true;el.scrollIntoView({block:'center'});}}window.addEventListener('hashchange',open);open();})();",
+                "(function(){function open(){var h=location.hash.slice(1);if(!h)return;try{h=decodeURIComponent(h);}catch(e){}var el=document.getElementById(h);if(el&&el.tagName==='DETAILS'){el.open=true;el.scrollIntoView({block:'center'});}}window.addEventListener('hashchange',open);open();})();",
             }}
           />
         </>

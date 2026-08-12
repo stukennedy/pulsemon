@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { eventsForTurn, sharedTraceIds, toolsForTurn } from "@/lib/turn-correlation";
+import { createTurnCorrelator, effectiveEnds, sharedTraceIds } from "@/lib/turn-correlation";
 import type { AgentToolCall, Event, VoiceTurn } from "@/db/schema";
 
 const turn = (partial: Partial<VoiceTurn>): VoiceTurn =>
@@ -41,18 +41,18 @@ describe("per-turn traces (one trace per turn — e.g. the DPT producer)", () =>
     turn({ id: "vt_1", trace_id: "vturn_a" }),
     turn({ id: "vt_2", trace_id: "vturn_b", started_at: "2026-08-12T08:01:00.000Z" }),
   ];
-  const shared = sharedTraceIds(turns);
+  const correlator = createTurnCorrelator(turns);
 
   it("trace match attaches to exactly one turn", () => {
     const calls = [call({ trace_id: "vturn_a" })];
-    expect(toolsForTurn(turns[0]!, calls, shared)).toHaveLength(1);
-    expect(toolsForTurn(turns[1]!, calls, shared)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(1);
+    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(0);
   });
 
   it("events follow the same single-turn attachment", () => {
     const events = [event({ trace_id: "vturn_b", timestamp: "2026-08-12T08:01:05.000Z" })];
-    expect(eventsForTurn(turns[0]!, events, shared)).toHaveLength(0);
-    expect(eventsForTurn(turns[1]!, events, shared)).toHaveLength(1);
+    expect(correlator.eventsForTurn(turns[0]!, events)).toHaveLength(0);
+    expect(correlator.eventsForTurn(turns[1]!, events)).toHaveLength(1);
   });
 });
 
@@ -64,49 +64,74 @@ describe("session-level traces (every turn shares one trace)", () => {
     turn({ id: "vt_1", trace_id: "sess_t", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" }),
     turn({ id: "vt_2", trace_id: "sess_t", started_at: "2026-08-12T08:01:00.000Z", ended_at: "2026-08-12T08:01:10.000Z" }),
   ];
-  const shared = sharedTraceIds(turns);
+  const correlator = createTurnCorrelator(turns);
 
   it("identifies the shared trace", () => {
-    expect(shared.has("sess_t")).toBe(true);
+    expect(sharedTraceIds(turns).has("sess_t")).toBe(true);
   });
 
   it("does NOT attach a shared-trace call to every turn — time decides nothing here", () => {
     const calls = [call({ trace_id: "sess_t", started_at: "2026-08-12T08:00:05.000Z" })];
     // trace_id present but shared → not a turn key → no trace attachment.
-    expect(toolsForTurn(turns[0]!, calls, shared)).toHaveLength(0);
-    expect(toolsForTurn(turns[1]!, calls, shared)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(0);
   });
 
   it("shared-trace events fall back to the time window, landing on ONE turn", () => {
     const events = [event({ trace_id: "sess_t", timestamp: "2026-08-12T08:01:05.000Z" })];
-    expect(eventsForTurn(turns[0]!, events, shared)).toHaveLength(0);
-    expect(eventsForTurn(turns[1]!, events, shared)).toHaveLength(1);
+    expect(correlator.eventsForTurn(turns[0]!, events)).toHaveLength(0);
+    expect(correlator.eventsForTurn(turns[1]!, events)).toHaveLength(1);
   });
 });
 
 describe("turn_id producers", () => {
   const turns = [turn({ id: "vt_1", trace_id: "sess_t" }), turn({ id: "vt_2", trace_id: "sess_t" })];
-  const shared = sharedTraceIds(turns);
+  const correlator = createTurnCorrelator(turns);
 
   it("turn_id === turn.id is the canonical join and always wins", () => {
     const calls = [call({ turn_id: "vt_2" })];
-    expect(toolsForTurn(turns[0]!, calls, shared)).toHaveLength(0);
-    expect(toolsForTurn(turns[1]!, calls, shared)).toHaveLength(1);
+    expect(correlator.toolsForTurn(turns[0]!, calls)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[1]!, calls)).toHaveLength(1);
   });
 
   it("turn_id matching the turn's own trace also joins (producer-side turn ids)", () => {
     const turnsB = [turn({ id: "vt_1", trace_id: "vturn_a" })];
     const calls = [call({ turn_id: "vturn_a" })];
-    expect(toolsForTurn(turnsB[0]!, calls, sharedTraceIds(turnsB))).toHaveLength(1);
+    expect(createTurnCorrelator(turnsB).toolsForTurn(turnsB[0]!, calls)).toHaveLength(1);
   });
 });
 
 describe("unkeyed records", () => {
   const turns = [turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: "2026-08-12T08:00:10.000Z" })];
-  const shared = sharedTraceIds(turns);
+  const correlator = createTurnCorrelator(turns);
 
   it("fall back to the turn's time window", () => {
-    expect(toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:00:05.000Z" })], shared)).toHaveLength(1);
-    expect(toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:05:00.000Z" })], shared)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:00:05.000Z" })])).toHaveLength(1);
+    expect(correlator.toolsForTurn(turns[0]!, [call({ started_at: "2026-08-12T08:05:00.000Z" })])).toHaveLength(0);
+  });
+});
+
+describe("turns without ended_at (ingest allows them)", () => {
+  it("bounds an unfinished turn at the NEXT turn's start, not year 9999", () => {
+    // Codex round 2: left open-ended, every later record time-matched every
+    // preceding unfinished turn — one payload rendered on every earlier card.
+    const turns = [
+      turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: null }),
+      turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: null }),
+    ];
+    const correlator = createTurnCorrelator(turns);
+    const late = [call({ started_at: "2026-08-12T08:01:30.000Z" })];
+    expect(correlator.toolsForTurn(turns[0]!, late)).toHaveLength(0);
+    expect(correlator.toolsForTurn(turns[1]!, late)).toHaveLength(1);
+  });
+
+  it("only the LAST turn stays open", () => {
+    const turns = [
+      turn({ id: "vt_1", started_at: "2026-08-12T08:00:00.000Z", ended_at: null }),
+      turn({ id: "vt_2", started_at: "2026-08-12T08:01:00.000Z", ended_at: null }),
+    ];
+    const ends = effectiveEnds(turns);
+    expect(ends.get("vt_1")).toBe("2026-08-12T08:01:00.000Z");
+    expect(ends.get("vt_2")).toBe("9999");
   });
 });

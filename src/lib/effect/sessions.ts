@@ -88,19 +88,30 @@ export function queryVoiceStageStats(
   tenant: TenantScope
 ): Effect.Effect<VoiceStageStats[], DatabaseError> {
   return dbEffect(async () => {
+    // Bounded per stage to the most recent rows: percentiles over the full
+    // history both grow the scan without limit AND stop meaning anything
+    // operationally — last week's incident should not colour today's p95.
     const result = await db.prepare(
       `WITH stage_latency AS (
-         SELECT 'asr' AS stage, asr_latency_ms AS ms FROM voice_turns
-           WHERE workspace_id = ?1 AND project_id = ?2 AND asr_latency_ms IS NOT NULL
+         SELECT stage, ms FROM (
+           SELECT 'asr' AS stage, asr_latency_ms AS ms, started_at FROM voice_turns
+             WHERE workspace_id = ?1 AND project_id = ?2 AND asr_latency_ms IS NOT NULL
+             ORDER BY started_at DESC LIMIT 1000)
          UNION ALL
-         SELECT 'llm', llm_latency_ms FROM voice_turns
-           WHERE workspace_id = ?1 AND project_id = ?2 AND llm_latency_ms IS NOT NULL
+         SELECT stage, ms FROM (
+           SELECT 'llm' AS stage, llm_latency_ms AS ms, started_at FROM voice_turns
+             WHERE workspace_id = ?1 AND project_id = ?2 AND llm_latency_ms IS NOT NULL
+             ORDER BY started_at DESC LIMIT 1000)
          UNION ALL
-         SELECT 'tts', tts_latency_ms FROM voice_turns
-           WHERE workspace_id = ?1 AND project_id = ?2 AND tts_latency_ms IS NOT NULL
+         SELECT stage, ms FROM (
+           SELECT 'tts' AS stage, tts_latency_ms AS ms, started_at FROM voice_turns
+             WHERE workspace_id = ?1 AND project_id = ?2 AND tts_latency_ms IS NOT NULL
+             ORDER BY started_at DESC LIMIT 1000)
          UNION ALL
-         SELECT 'audio', audio_latency_ms FROM voice_turns
-           WHERE workspace_id = ?1 AND project_id = ?2 AND audio_latency_ms IS NOT NULL
+         SELECT stage, ms FROM (
+           SELECT 'audio' AS stage, audio_latency_ms AS ms, started_at FROM voice_turns
+             WHERE workspace_id = ?1 AND project_id = ?2 AND audio_latency_ms IS NOT NULL
+             ORDER BY started_at DESC LIMIT 1000)
        ),
        ranked AS (
          SELECT stage, ms,
