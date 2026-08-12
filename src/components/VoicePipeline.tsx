@@ -89,7 +89,9 @@ export const RecentVoiceTurnsTable: FC<{ turns: RecentVoiceTurn[] }> = ({ turns 
               style="border-top:1px solid rgba(255,255,255,0.04)"
               onclick={
                 turn.session_id
-                  ? `window.location.href='/sessions/${encodeURIComponent(turn.session_id)}${turn.trace_id ? `#turn-${encodeURIComponent(turn.trace_id)}` : ""}'`
+                  ? `window.location.href=${JSON.stringify(
+                      `/sessions/${encodeURIComponent(turn.session_id)}#turn-${encodeURIComponent(turn.id)}`
+                    )}`
                   : undefined
               }
             >

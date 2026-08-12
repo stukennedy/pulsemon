@@ -3,6 +3,7 @@ import type { AgentToolCall, Event, LogRecord, Span, VoiceTurn } from "@/db/sche
 import type { RealtimeSessionDetail, VoiceSessionSummary } from "@/lib/effect/sessions";
 import { voiceSessionStatus } from "@/lib/effect/sessions";
 import { buildWaterfall, STAGE_COLOURS, STAGE_LABELS, type WaterfallRow } from "@/lib/voice-waterfall";
+import { eventsForTurn, sharedTraceIds, toolsForTurn } from "@/lib/turn-correlation";
 import { durationColor, formatDuration, statusColor } from "./StatusBadge";
 import { LocalTime } from "./LocalTime";
 
@@ -50,7 +51,7 @@ export const VoiceSessionTable: FC<{ sessions: VoiceSessionSummary[] }> = ({ ses
               <tr
                 class="log-row cursor-pointer"
                 style="border-top:1px solid rgba(255,255,255,0.04)"
-                onclick={`window.location.href='/sessions/${encodeURIComponent(session.session_id)}'`}
+                onclick={`window.location.href=${JSON.stringify(`/sessions/${encodeURIComponent(session.session_id)}`)}`}
               >
                 <td class="px-4 py-2">
                   <div class="text-xs font-mono" style="color:#cbd5e1">{session.session_id}</div>
@@ -86,32 +87,13 @@ export const VoiceSessionTable: FC<{ sessions: VoiceSessionSummary[] }> = ({ ses
 /* ------------------------------------------------------------------------ */
 
 /** DOM id for a turn's card — the waterfall links here, and deep links from
- *  other tools (or the recent-turns feed) land here. */
-function turnAnchor(turn: VoiceTurn, index: number) {
-  return `turn-${turn.trace_id ?? index}`;
+ *  other tools (or the recent-turns feed) land here. Keyed on the row's
+ *  PRIMARY KEY: trace_id may legitimately be shared by every turn of a
+ *  session, which made every anchor resolve to the first card. */
+function turnAnchor(turn: VoiceTurn) {
+  return `turn-${turn.id}`;
 }
 
-/**
- * Attach tool calls to the turn they belong to. Prefer the explicit join
- * (`trace_id`/`turn_id` naming the turn's trace); fall back to the time
- * window, because some producers only stamp tool calls with the session.
- */
-function toolsForTurn(turn: VoiceTurn, toolCalls: AgentToolCall[]): AgentToolCall[] {
-  const byTrace = toolCalls.filter(
-    (call) => (call.trace_id && call.trace_id === turn.trace_id) || (call.turn_id && call.turn_id === turn.trace_id)
-  );
-  if (byTrace.length > 0) return byTrace;
-  if (!turn.started_at) return [];
-  const start = turn.started_at;
-  const end = turn.ended_at ?? "9999";
-  return toolCalls.filter((call) => !call.trace_id && !call.turn_id && call.started_at >= start && call.started_at <= end);
-}
-
-/** Pipeline events for a turn, by trace. */
-function eventsForTurn(turn: VoiceTurn, events: Event[]): Event[] {
-  if (!turn.trace_id) return [];
-  return events.filter((event) => event.trace_id === turn.trace_id);
-}
 
 /** Pretty-print a JSON payload column; fall back to the raw string. */
 function pretty(raw: string | null): string | null {
@@ -158,14 +140,14 @@ const TurnWaterfall: FC<{ turns: VoiceTurn[] }> = ({ turns }) => {
         <Legend />
       </div>
       <div class="px-4 py-3 space-y-1.5">
-        {rows.map((row, i) => (
+        {rows.map((row) => (
           <a
-            href={`#${turnAnchor(row.turn, i)}`}
+            href={`#${turnAnchor(row.turn)}`}
             class="flex items-center gap-3 group no-underline"
-            title={`turn ${row.turn.turn_index ?? i + 1}: ${formatDuration(row.totalMs)}`}
+            title={`turn ${row.turn.turn_index ?? "?"}: ${formatDuration(row.totalMs)}`}
           >
             <span class="w-8 text-right text-[10px] font-mono shrink-0" style="color:#475569">
-              #{row.turn.turn_index ?? i + 1}
+              #{row.turn.turn_index ?? "·"}
             </span>
             <div class="flex-1 min-w-0">
               <WaterfallBar row={row} />
@@ -226,7 +208,7 @@ const TurnCard: FC<{ turn: VoiceTurn; index: number; toolCalls: AgentToolCall[];
   const tone = turn.interruption ? "#f59e0b" : turn.role === "user" ? "#22d3ee" : "#818cf8";
   return (
     <details
-      id={turnAnchor(turn, index)}
+      id={turnAnchor(turn)}
       class="rounded-lg overflow-hidden"
       style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06)"
     >
@@ -330,6 +312,7 @@ const ActivityTimeline: FC<{ detail: RealtimeSessionDetail }> = ({ detail }) => 
                 <div class={`text-[10px] font-mono mt-1 ${statusColor(call.status)}`}>
                   {call.status} / {formatDuration(call.duration_ms)} / retries {call.retry_count}
                 </div>
+                {call.error && <div class="text-xs mt-1 text-red-400">{call.error}</div>}
               </TimelineItem>
             );
           }
@@ -379,6 +362,7 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
   tab = "turns",
 }) => {
   const summary = detail.summary;
+  const shared = sharedTraceIds(detail.turns);
   const base = `/sessions/${encodeURIComponent(sessionId)}`;
   const tabs: Array<{ key: SessionDetailTab; label: string; href: string }> = [
     { key: "turns", label: "Turns", href: base },
@@ -449,8 +433,8 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
                 <TurnCard
                   turn={turn}
                   index={index}
-                  toolCalls={toolsForTurn(turn, detail.toolCalls)}
-                  events={eventsForTurn(turn, detail.events)}
+                  toolCalls={toolsForTurn(turn, detail.toolCalls, shared)}
+                  events={eventsForTurn(turn, detail.events, shared)}
                 />
               ))
             )}

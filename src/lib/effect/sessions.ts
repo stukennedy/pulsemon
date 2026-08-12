@@ -141,6 +141,7 @@ export function queryVoiceStageStats(
 }
 
 export interface RecentVoiceTurn {
+  readonly id: string;
   readonly trace_id: string | null;
   readonly session_id: string | null;
   readonly role: string;
@@ -163,7 +164,7 @@ export function queryRecentVoiceTurns(
 ): Effect.Effect<RecentVoiceTurn[], DatabaseError> {
   return dbEffect(async () => {
     const result = await db.prepare(
-      `SELECT trace_id, session_id, role, started_at,
+      `SELECT id, trace_id, session_id, role, started_at,
               asr_latency_ms, llm_latency_ms, tts_latency_ms, audio_latency_ms,
               duration_ms, interruption, state
        FROM voice_turns
