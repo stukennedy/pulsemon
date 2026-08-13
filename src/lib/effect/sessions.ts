@@ -64,6 +64,20 @@ function placeholders(values: readonly unknown[]) {
   return values.map(() => "?").join(", ");
 }
 
+// D1 rejects any statement binding more than 100 parameters ("too many SQL
+// variables"), so id lists built from session data must be chunked — a large
+// session otherwise turns the whole detail page into a 500. 90 leaves
+// headroom for the tenant scope and fixed binds that ride along.
+const MAX_IDS_PER_QUERY = 90;
+
+function chunk<T>(values: readonly T[], size = MAX_IDS_PER_QUERY): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < values.length; i += size) {
+    chunks.push(values.slice(i, i + size));
+  }
+  return chunks;
+}
+
 function numberOrNull(value: unknown) {
   if (value === null || value === undefined) return null;
   const number = Number(value);
@@ -215,21 +229,28 @@ export function queryVoiceSessionSummaries(
     }>();
 
     const sessions = voiceRows.results.map((row) => row.session_id);
-    const toolRows = sessions.length === 0 ? [] : (await db.prepare(
-      `SELECT
-        session_id,
-        COUNT(*) AS tool_call_count,
-        SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) AS tool_error_count
-       FROM agent_tool_calls
-       WHERE workspace_id = ?
-         AND project_id = ?
-         AND session_id IN (${placeholders(sessions)})
-       GROUP BY session_id`
-    ).bind(tenant.workspace_id, tenant.project_id, ...sessions).all<{
+    const toolRows: Array<{
       session_id: string;
       tool_call_count: number;
       tool_error_count: number | null;
-    }>()).results;
+    }> = [];
+    for (const sessionChunk of chunk(sessions)) {
+      toolRows.push(...(await db.prepare(
+        `SELECT
+          session_id,
+          COUNT(*) AS tool_call_count,
+          SUM(CASE WHEN status != 'ok' THEN 1 ELSE 0 END) AS tool_error_count
+         FROM agent_tool_calls
+         WHERE workspace_id = ?
+           AND project_id = ?
+           AND session_id IN (${placeholders(sessionChunk)})
+         GROUP BY session_id`
+      ).bind(tenant.workspace_id, tenant.project_id, ...sessionChunk).all<{
+        session_id: string;
+        tool_call_count: number;
+        tool_error_count: number | null;
+      }>()).results);
+    }
 
     const toolBySession = new Map(toolRows.map((row) => [row.session_id, row]));
 
@@ -279,28 +300,36 @@ export function getRealtimeSession(
     const turnTraceIds = Array.from(new Set(
       turns.map((turn) => sessionKey(turn.trace_id)).filter((value): value is string => Boolean(value))
     ));
-    const toolConditions = ["session_id = ?"];
-    const toolBindings: unknown[] = [sessionId];
-    if (turnIds.length > 0) {
-      toolConditions.push(`turn_id IN (${placeholders(turnIds)})`);
-      toolBindings.push(...turnIds);
+    // Each lookup is its own bounded query; the union is deduped and re-sorted
+    // below. Any row in the global top-500 by started_at is necessarily in its
+    // own query's top-500, so the per-query LIMIT preserves the old semantics.
+    const toolCallLookups: Array<{ condition: string; bindings: unknown[] }> = [
+      connectionId
+        ? { condition: "(session_id = ? OR connection_id = ?)", bindings: [sessionId, connectionId] }
+        : { condition: "session_id = ?", bindings: [sessionId] },
+    ];
+    const turnKeys = Array.from(new Set([...turnIds, ...turnTraceIds]));
+    for (const keys of chunk(turnKeys)) {
+      toolCallLookups.push({ condition: `turn_id IN (${placeholders(keys)})`, bindings: keys });
     }
-    if (turnTraceIds.length > 0) {
-      toolConditions.push(`turn_id IN (${placeholders(turnTraceIds)})`, `trace_id IN (${placeholders(turnTraceIds)})`);
-      toolBindings.push(...turnTraceIds, ...turnTraceIds);
+    for (const keys of chunk(turnTraceIds)) {
+      toolCallLookups.push({ condition: `trace_id IN (${placeholders(keys)})`, bindings: keys });
     }
-    if (connectionId) {
-      toolConditions.push("connection_id = ?");
-      toolBindings.push(connectionId);
+    const toolCallsById = new Map<string, AgentToolCall>();
+    for (const lookup of toolCallLookups) {
+      const rows = (await db.prepare(
+        `SELECT * FROM agent_tool_calls
+         WHERE workspace_id = ?
+           AND project_id = ?
+           AND ${lookup.condition}
+         ORDER BY started_at ASC
+         LIMIT 500`
+      ).bind(tenant.workspace_id, tenant.project_id, ...lookup.bindings).all<AgentToolCall>()).results;
+      for (const row of rows) toolCallsById.set(row.id, row);
     }
-    const toolCalls = (await db.prepare(
-      `SELECT * FROM agent_tool_calls
-       WHERE workspace_id = ?
-         AND project_id = ?
-         AND (${toolConditions.join(" OR ")})
-       ORDER BY started_at ASC
-       LIMIT 500`
-    ).bind(tenant.workspace_id, tenant.project_id, ...toolBindings).all<AgentToolCall>()).results;
+    const toolCalls = Array.from(toolCallsById.values())
+      .sort((a, b) => a.started_at.localeCompare(b.started_at))
+      .slice(0, 500);
     const traceIds = Array.from(new Set([
       ...turns.map((turn) => sessionKey(turn.trace_id)),
       ...toolCalls.map((call) => sessionKey(call.trace_id)),
@@ -317,47 +346,48 @@ export function getRealtimeSession(
       ).bind(tenant.workspace_id, tenant.project_id, connectionId).first<Connection>()
       : null;
 
-    const spans = traceIds.length === 0 ? [] : (await db.prepare(
-      `SELECT * FROM spans
-       WHERE workspace_id = ?
-         AND project_id = ?
-         AND trace_id IN (${placeholders(traceIds)})
-       ORDER BY started_at ASC`
-    ).bind(tenant.workspace_id, tenant.project_id, ...traceIds).all<Span>()).results;
+    const spans: Span[] = [];
+    for (const keys of chunk(traceIds)) {
+      spans.push(...(await db.prepare(
+        `SELECT * FROM spans
+         WHERE workspace_id = ?
+           AND project_id = ?
+           AND trace_id IN (${placeholders(keys)})
+         ORDER BY started_at ASC`
+      ).bind(tenant.workspace_id, tenant.project_id, ...keys).all<Span>()).results);
+    }
+    spans.sort((a, b) => a.started_at.localeCompare(b.started_at));
 
-    const logs = traceIds.length === 0 && !connectionId ? [] : (await db.prepare(
-      `SELECT * FROM logs
-       WHERE workspace_id = ?
-         AND project_id = ?
-         AND (
-           ${traceIds.length > 0 ? `trace_id IN (${placeholders(traceIds)})` : "0"}
-           ${connectionId ? " OR connection_id = ?" : ""}
-         )
-       ORDER BY timestamp ASC
-       LIMIT 500`
-    ).bind(
-      tenant.workspace_id,
-      tenant.project_id,
-      ...traceIds,
-      ...(connectionId ? [connectionId] : [])
-    ).all<LogRecord>()).results;
+    // Logs and events share a shape: rows keyed by trace or connection, ordered
+    // by timestamp, capped at 500. A row can match both a trace chunk and the
+    // connection lookup, so the union is deduped by id before the final cap.
+    const telemetryLookups: Array<{ condition: string; bindings: unknown[] }> = [
+      ...chunk(traceIds).map((keys) => ({
+        condition: `trace_id IN (${placeholders(keys)})`,
+        bindings: keys as unknown[],
+      })),
+      ...(connectionId ? [{ condition: "connection_id = ?", bindings: [connectionId] as unknown[] }] : []),
+    ];
+    const queryTelemetry = async <T extends { id: string; timestamp: string }>(table: "logs" | "events") => {
+      const byId = new Map<string, T>();
+      for (const lookup of telemetryLookups) {
+        const rows = (await db.prepare(
+          `SELECT * FROM ${table}
+           WHERE workspace_id = ?
+             AND project_id = ?
+             AND (${lookup.condition})
+           ORDER BY timestamp ASC
+           LIMIT 500`
+        ).bind(tenant.workspace_id, tenant.project_id, ...lookup.bindings).all<T>()).results;
+        for (const row of rows) byId.set(row.id, row);
+      }
+      return Array.from(byId.values())
+        .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+        .slice(0, 500);
+    };
 
-    const events = traceIds.length === 0 && !connectionId ? [] : (await db.prepare(
-      `SELECT * FROM events
-       WHERE workspace_id = ?
-         AND project_id = ?
-         AND (
-           ${traceIds.length > 0 ? `trace_id IN (${placeholders(traceIds)})` : "0"}
-           ${connectionId ? " OR connection_id = ?" : ""}
-         )
-       ORDER BY timestamp ASC
-       LIMIT 500`
-    ).bind(
-      tenant.workspace_id,
-      tenant.project_id,
-      ...traceIds,
-      ...(connectionId ? [connectionId] : [])
-    ).all<Event>()).results;
+    const logs = telemetryLookups.length === 0 ? [] : await queryTelemetry<LogRecord>("logs");
+    const events = telemetryLookups.length === 0 ? [] : await queryTelemetry<Event>("events");
 
     const assignments = createTurnCorrelator(turns).assign(toolCalls, events);
     const turnsWithTelemetry = turns.map((turn) => ({
