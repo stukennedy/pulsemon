@@ -113,6 +113,43 @@ describe("Effect voice session queries", () => {
     expect(detail.turnsWithTelemetry[0]?.toolCalls.map((call) => call.id)).toEqual(["tool-a"]);
   });
 
+  it("loads a session large enough to exceed D1's 100 bound parameter limit", async () => {
+    // Regression: scan_B2fh16ltHKfD (50 turns, 25 traces) made the
+    // agent_tool_calls lookup bind 104 parameters and 500 on UAT.
+    const ctx = createTestContext();
+    for (let i = 0; i < 50; i++) {
+      ctx.seedVoiceTurn({
+        id: `turn-${i}`,
+        session_id: "session-big",
+        connection_id: "conn-big",
+        trace_id: `trace-${Math.floor(i / 2)}`,
+        started_at: new Date(Date.UTC(2026, 7, 12, 8, 0, i)).toISOString(),
+      });
+    }
+    ctx.seedAgentToolCall({ id: "tool-big", session_id: "session-big", trace_id: "trace-0" });
+
+    const detail = await Effect.runPromise(getRealtimeSession(ctx.d1, DEFAULT_TENANT_SCOPE, "session-big"));
+
+    expect(detail.turns).toHaveLength(50);
+    expect(detail.toolCalls.map((call) => call.id)).toEqual(["tool-big"]);
+    expect(detail.summary?.session_id).toBe("session-big");
+  });
+
+  it("summarizes more sessions than fit in one bound parameter budget", async () => {
+    // The tool-call aggregation binds one parameter per session, so >98
+    // distinct sessions breaks the single-query form against real D1.
+    const ctx = createTestContext();
+    for (let i = 0; i < 120; i++) {
+      ctx.seedVoiceTurn({ session_id: `session-${String(i).padStart(3, "0")}` });
+      ctx.seedAgentToolCall({ session_id: `session-${String(i).padStart(3, "0")}` });
+    }
+
+    const summaries = await Effect.runPromise(queryVoiceSessionSummaries(ctx.d1, DEFAULT_TENANT_SCOPE, 200));
+
+    expect(summaries).toHaveLength(120);
+    expect(summaries.every((summary) => summary.tool_call_count === 1)).toBe(true);
+  });
+
   it("excludes invalid historical negative latencies from voice stage stats", async () => {
     const ctx = createTestContext();
     ctx.seedVoiceTurn({ id: "valid", asr_latency_ms: 120 });

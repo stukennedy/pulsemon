@@ -10,6 +10,18 @@ import path from "path";
 
 const MIGRATIONS_DIR = path.resolve(import.meta.dir, "../../migrations");
 
+// Production D1 runs SQLite with a 100-variable ceiling, so a statement with
+// more than 100 bound parameters fails there while Bun's local SQLite (with a
+// much higher default) happily executes it. Enforce D1's limit here so tests
+// catch queries that only break against the real backend.
+const D1_MAX_BOUND_PARAMS = 100;
+
+function guardBoundParams(bindings: any[]) {
+  if (bindings.length > D1_MAX_BOUND_PARAMS) {
+    throw new Error("D1_ERROR: too many SQL variables at offset 0: SQLITE_ERROR");
+  }
+}
+
 function createD1Shim(sqlite: Database): D1Database {
   return {
     prepare(query: string) {
@@ -21,22 +33,26 @@ function createD1Shim(sqlite: Database): D1Database {
           return this;
         },
         async all<T = any>() {
+          guardBoundParams(this._bindings);
           const stmt = sqlite.prepare(this._query);
           const rows = stmt.all(...this._bindings);
           return { results: rows as T[], success: true, meta: {} };
         },
         async first<T = any>(col?: string) {
+          guardBoundParams(this._bindings);
           const stmt = sqlite.prepare(this._query);
           const row = stmt.get(...this._bindings) as any;
           if (col && row) return row[col] as T;
           return (row ?? null) as T;
         },
         async run() {
+          guardBoundParams(this._bindings);
           const stmt = sqlite.prepare(this._query);
           const info = stmt.run(...this._bindings);
           return { results: [], success: true, meta: { changes: info.changes, last_row_id: info.lastInsertRowid } };
         },
         async raw<T = any>() {
+          guardBoundParams(this._bindings);
           const stmt = sqlite.prepare(this._query);
           const rows = stmt.all(...this._bindings);
           return rows.map((r: any) => Object.values(r)) as T[];
