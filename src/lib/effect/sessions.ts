@@ -3,6 +3,7 @@ import type { AgentToolCall, Connection, Event, LogRecord, Span, VoiceTurn } fro
 import type { TenantScope } from "@/types";
 import { createTurnCorrelator } from "@/lib/effect/turn-correlation";
 import { buildWaterfall, type WaterfallRow } from "@/lib/effect/voice-waterfall";
+import { buildVoiceTurnTimeline, type VoiceTurnTimelineResult } from "@/lib/effect/voice-turn-timeline";
 import { DatabaseError } from "./errors";
 import { queryVoiceLatencyPercentiles } from "./voice-stats";
 
@@ -40,6 +41,11 @@ export interface TurnWithTelemetry {
   readonly turn: VoiceTurn;
   readonly toolCalls: AgentToolCall[];
   readonly events: Event[];
+  /** Absolute-time gantt geometry for this one turn (`voice-turn-timeline.ts`).
+   *  `timeline.hasTimingData` is `false` for pre-PR-A turns with no spans, no
+   *  playout events, and no correlated tool calls — the UI degrades to the
+   *  older proportional waterfall bar for those. */
+  readonly timeline: VoiceTurnTimelineResult;
 }
 
 export type SessionTimelineEntry =
@@ -390,11 +396,29 @@ export function getRealtimeSession(
     const events = telemetryLookups.length === 0 ? [] : await queryTelemetry<Event>("events");
 
     const assignments = createTurnCorrelator(turns).assign(toolCalls, events);
-    const turnsWithTelemetry = turns.map((turn) => ({
-      turn,
-      toolCalls: assignments.toolsFor(turn.id),
-      events: assignments.eventsFor(turn.id),
-    }));
+    // Spans carry `trace_id = turnId` on PR-A data (A2), so a direct
+    // trace-id filter is the correlation for spans — unlike tool
+    // calls/events there is no `turn_id` column on `spans` to key off, and no
+    // window-fallback pass, so a turn with no `trace_id` (or a legacy trace
+    // shared across turns) simply gets no spans placed on its timeline
+    // rather than a guessed placement.
+    const spansByTraceId = new Map<string, Span[]>();
+    for (const span of spans) {
+      const list = spansByTraceId.get(span.trace_id) ?? [];
+      list.push(span);
+      spansByTraceId.set(span.trace_id, list);
+    }
+    const turnsWithTelemetry = turns.map((turn) => {
+      const turnToolCalls = assignments.toolsFor(turn.id);
+      const turnEvents = assignments.eventsFor(turn.id);
+      const turnSpans = turn.trace_id ? spansByTraceId.get(turn.trace_id) ?? [] : [];
+      return {
+        turn,
+        toolCalls: turnToolCalls,
+        events: turnEvents,
+        timeline: buildVoiceTurnTimeline(turn, turnSpans, turnEvents, turnToolCalls),
+      };
+    });
     const timeline: SessionTimelineEntry[] = [
       ...turns.map((turn) => ({ type: "turn" as const, at: turn.started_at, item: turn })),
       ...toolCalls.map((call) => ({ type: "tool" as const, at: call.started_at, item: call })),

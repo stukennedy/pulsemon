@@ -56,6 +56,28 @@ describe("Page routes", () => {
     expect(html).toContain("Recent Voice Sessions");
   });
 
+  it("GET /voice renders the live concurrency panel wired to the SSE stream", async () => {
+    const res = await ctx.request("/voice");
+    const html = await res.text();
+
+    expect(html).toContain('id="voice-concurrency-panel"');
+    // JSX escapes the quotes inside the data-init attribute value (HTML
+    // entity-decodes back to the literal Datastar expression in a browser),
+    // so match the path/query rather than the raw `@get('...')` string.
+    expect(html).toContain("/voice/concurrency/stream?window=1h");
+    expect(html).toContain("Sessions now");
+    expect(html).toContain("LLM in-flight");
+    expect(html).toContain("TTS in-flight");
+    expect(html).toContain("/vendor/datastar-1.0.2.js");
+  });
+
+  it("GET /voice honours the ?window= param on both the page and the stream URL", async () => {
+    const res = await ctx.request("/voice?window=24h");
+    const html = await res.text();
+
+    expect(html).toContain("/voice/concurrency/stream?window=24h");
+  });
+
   it("GET /sessions/:id returns session detail page", async () => {
     ctx.seedVoiceTurn({
       id: "turn-route-a",
@@ -97,6 +119,52 @@ describe("Page routes", () => {
     expect(res.status).toBe(200);
     expect(html).toContain("Turn Waterfall");
     expect(html).toContain("#turn-only-turn");
+  });
+
+  it("GET /sessions/:id renders the absolute-time turn timeline when PR-A spans exist", async () => {
+    ctx.seedVoiceTurn({
+      id: "turn-timeline",
+      session_id: "session-timeline",
+      trace_id: "turn-timeline",
+      started_at: "2026-08-18T10:00:00.000Z",
+    });
+    ctx.sqlite.prepare(`UPDATE voice_turns SET ended_at = ? WHERE id = ?`).run(
+      "2026-08-18T10:00:02.000Z",
+      "turn-timeline"
+    );
+    ctx.seedSpan({
+      id: "span-llm-timeline",
+      trace_id: "turn-timeline",
+      operation: "voice.llm.generate",
+      started_at: "2026-08-18T10:00:00.200Z",
+    });
+    ctx.sqlite.prepare(`UPDATE spans SET ended_at = ? WHERE id = ?`).run(
+      "2026-08-18T10:00:00.800Z",
+      "span-llm-timeline"
+    );
+
+    const res = await ctx.request("/sessions/session-timeline");
+    const html = await res.text();
+
+    expect(res.status).toBe(200);
+    expect(html).toContain("llm");
+  });
+
+  it("GET /sessions/:id degrades to the proportional bar for pre-PR-A turns with no spans/events", async () => {
+    ctx.seedVoiceTurn({
+      id: "legacy-turn",
+      session_id: "legacy-session",
+      trace_id: "legacy-turn",
+      asr_latency_ms: 100,
+      llm_latency_ms: 400,
+      tts_latency_ms: 150,
+    });
+
+    const res = await ctx.request("/sessions/legacy-session");
+
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain("pre-telemetry-upgrade data");
   });
 
   it("GET /monitors returns monitor evaluations page", async () => {
