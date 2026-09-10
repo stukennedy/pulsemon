@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import type { Env, TenantScope } from "@/types";
 import { authorizeIngest, type ApiKeyContext, type ApiKeyDeps } from "./auth";
 import { makeIngestCardinalityController } from "./cardinality";
+import { hydrateContent, stageContent, type ContentRef } from "./content-staging";
 import {
   ConfigurationError,
   PayloadTooLargeError,
@@ -93,10 +94,16 @@ export interface TelemetryQueueMessage {
   readonly batch: TelemetryBatchWrite;
   readonly counts: Record<string, number>;
   readonly sampled_out?: number;
+  /** Content fields lifted out of `batch` into R2 at the edge (content-staging.ts).
+   *  Absent on messages that carry no content. */
+  readonly content_refs?: readonly ContentRef[];
 }
 
 export interface QueuedIngestDeps extends ApiKeyDeps {
   readonly queue?: Queue<TelemetryQueueMessage>;
+  /** The EU-pinned bucket content is staged in before enqueue (RAW_TELEMETRY). */
+  readonly contentBucket?: R2Bucket;
+  readonly contentPrefix?: string;
   readonly governance?: IngestGovernanceConfig;
   readonly sampleRate?: string;
   readonly queueMaxBytes?: string;
@@ -489,7 +496,7 @@ function enqueueMessage(
       return yield* Effect.fail(new PayloadTooLargeError({ message: `Max ${maxOperations} operations per batch` }));
     }
 
-    const message: TelemetryQueueMessage = {
+    const assembled: TelemetryQueueMessage = {
       version: 1,
       id: uuid(),
       enqueued_at: now(),
@@ -501,7 +508,14 @@ function enqueueMessage(
       ...(sampledOut > 0 ? { sampled_out: sampledOut } : {}),
     };
 
-    if (total === 0) return accepted(message);
+    if (total === 0) return accepted(assembled);
+
+    // Content leaves the envelope BEFORE the size check and before anything
+    // reaches the queue: what is measured and sent is references only.
+    const message = yield* stageContent(
+      { RAW_TELEMETRY: deps.contentBucket, RAW_TELEMETRY_PREFIX: deps.contentPrefix },
+      assembled,
+    );
 
     const maxBytes = queueMaxBytes(deps.queueMaxBytes);
     const bytes = messageBytes(message);
@@ -718,9 +732,12 @@ export function writeTelemetryQueueMessage(
     if (total > maxOperations) {
       return yield* Effect.fail(new PayloadTooLargeError({ message: `Max ${maxOperations} operations per batch` }));
     }
+    // The archive keeps the envelope as it travelled — references, no content.
     yield* archiveRawTelemetryMessage(env, message);
-    yield* cardinality.enforce(message.context, message.required_scope, message.batch);
-    yield* repository.writeBatch(message.batch);
+    // Content returns from R2 only here, on the way into D1 (both EU-pinned).
+    const hydrated = yield* hydrateContent(env, message);
+    yield* cardinality.enforce(hydrated.context, hydrated.required_scope, hydrated.batch);
+    yield* repository.writeBatch(hydrated.batch);
   });
 }
 

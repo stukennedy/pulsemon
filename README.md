@@ -156,8 +156,18 @@ return `202 Accepted`, and persist telemetry from the queue consumer.
 Cloudflare Queue message limits. `INGEST_QUEUE_MAX_OPERATIONS` defaults to
 `250`, and `INGEST_DIRECT_D1_MAX_BATCH_OPERATIONS` defaults to `250`; both are
 capped at `900` to keep D1 write batches below platform limits.
-When `RAW_TELEMETRY` is bound, queued ingest archives each normalized queue
-envelope to R2 before D1 persistence. Set `RAW_TELEMETRY_REQUIRED=true` in
+**Content never rides the queue.** In queued mode the fields that can carry
+verbatim end-user content — a voice turn's `transcript`, a tool call's `input`
+and `output` — are written to the `RAW_TELEMETRY` bucket at
+the edge (`<prefix>-content/…`, keyed by queue message id) and replaced in the
+envelope by references; the consumer hydrates them back on the way into D1
+(`src/lib/effect/content-staging.ts`). Cloudflare Queues have no regional residency
+control, so the queue only ever sees ids and metrics. Queued ingest of content
+with no bucket bound is refused (503) rather than falling back. Staged objects
+are kept, not deleted: queues are at-least-once and a redelivery must hydrate.
+
+When `RAW_TELEMETRY` is bound, queued ingest also archives each normalized
+(reference-only) queue envelope to R2 before D1 persistence. Set `RAW_TELEMETRY_REQUIRED=true` in
 production to retry queue messages instead of accepting a missing bucket, and
 use `RAW_TELEMETRY_PREFIX` to choose the R2 key prefix.
 `INGEST_API_KEYS` can replace `INGEST_API_KEY` when you need scoped keys, for

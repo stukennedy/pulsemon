@@ -150,6 +150,12 @@ export function createRawTelemetryBucketHarness(): RawTelemetryBucketHarness {
       objects.push({ key, body: value, options });
       return null;
     },
+    // Hydration reads staged content back (content-staging.ts).
+    get: async (key: string) => {
+      const found = objects.find((object) => object.key === key);
+      if (!found) return null;
+      return { json: async () => JSON.parse(found.body), text: async () => found.body };
+    },
   } as unknown as R2Bucket;
 
   return { objects, bucket };

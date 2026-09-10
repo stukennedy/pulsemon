@@ -102,6 +102,8 @@ function queuedDeps(c: Context<{ Bindings: Env }>, requiredScope: string): Queue
     requiredScope,
     defaultTenant: tenantScopeFromEnv(c.env),
     queue: c.env.TELEMETRY_QUEUE as Queue<TelemetryQueueMessage> | undefined,
+    contentBucket: c.env.RAW_TELEMETRY,
+    contentPrefix: c.env.RAW_TELEMETRY_PREFIX,
     governance: governanceConfigFromEnv(c.env),
     sampleRate: c.env.INGEST_SAMPLE_RATE,
     queueMaxBytes: c.env.INGEST_QUEUE_MAX_BYTES,

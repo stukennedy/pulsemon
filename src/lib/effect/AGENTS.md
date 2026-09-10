@@ -74,6 +74,12 @@ global access. Keep `Env` parsing in routes or small `fromEnv` helpers.
   `sessions.ts#getRealtimeSession` and rendered by
   `components/VoiceTurnTimeline.tsx`.
 
+## Content Staging
+
+- `content-staging.ts`: keeps end-user content (transcripts, tool-call input /
+  output) out of the queue: staged to R2 at enqueue, hydrated on consume.
+  Queues have no regional residency control, so the queue only sees ids and metrics.
+
 ## Tests
 
 - Add direct service tests in `src/test/lib` for domain behavior.
