@@ -32,7 +32,8 @@ presentation.
 - `src/lib/`: auth, tenancy, facets, rendering, websocket search sessions.
 - `src/components/`: server-rendered JSX UI components.
 - `src/db/schema.ts`: Drizzle table declarations and inferred types.
-- `src/sdk/`: TypeScript SDK for instrumentation clients.
+- `packages/client/`: `@multiverse-com/pulsemon`, the buffered ingest client
+  (built to `dist/` and driven against the receiver by `src/test/contract/`).
 - `src/test/`: test helpers and API/service/route/SDK tests.
 - `migrations/`: ordered D1 SQL migrations.
 - `scripts/`: operational scripts for smoke, load, restore, DR, and OTLP
@@ -46,7 +47,7 @@ Run these before handing off material changes:
 
 ```bash
 bun run typecheck
-bun test
+bun run test
 bun run build
 bun run restore:check
 ```

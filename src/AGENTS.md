@@ -14,7 +14,6 @@ SDK, and tests.
 - `components/` owns reusable server-rendered UI.
 - `db/schema.ts` is the source of truth for D1 tables and Drizzle-inferred
   select/insert types.
-- `sdk/` is client-facing API surface and should avoid server-only imports.
 
 ## Imports
 

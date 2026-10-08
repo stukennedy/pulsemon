@@ -1,0 +1,22 @@
+{
+  // `types: ["node"]` on purpose: this package touches `fetch`, `RequestInit`,
+  // `Date.now()` and nothing platform-specific. Node's globals declare exactly
+  // those, which keeps the package runtime-agnostic and, more importantly,
+  // honest — nothing here may reach for a Worker binding, a Hono context, DO
+  // storage, or anything from the receiver in ../../src. `noUncheckedIndexedAccess`
+  // because this is contract code: an unchecked lookup is a silently malformed
+  // record on someone's dashboard.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts"]
+}

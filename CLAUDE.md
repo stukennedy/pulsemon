@@ -7,7 +7,7 @@ The shortest safe loop is:
 
 ```bash
 bun run typecheck
-bun test
+bun run test
 bun run build
 bun run restore:check
 ```

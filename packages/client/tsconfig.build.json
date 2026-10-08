@@ -1,0 +1,6 @@
+{
+  // Declarations only — `bun build` emits the JS. Same strictness as tsconfig.json.
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": "src", "noEmit": false, "declaration": true, "emitDeclarationOnly": true, "outDir": "dist" },
+  "include": ["src/**/*.ts"]
+}

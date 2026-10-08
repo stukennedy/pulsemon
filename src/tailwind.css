@@ -84,3 +84,6 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.15); }
+
+/* Tailwind v4 scans the whole repo for class names; the ingest client is not UI. */
+@source not "../packages";

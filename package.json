@@ -4,14 +4,17 @@
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "vite dev --port 8788",
     "build": "vite build",
     "routes": "hono-router ./src/routes ./src/router.ts",
     "deploy": "vite build && wrangler deploy",
-    "test": "bun test",
-    "typecheck": "tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
-    "check": "bun run typecheck && bun test && bun run build && bun run restore:check",
+    "test": "bun run client:build && bun test",
+    "typecheck": "bun run client:build && bun run client:type-check && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "check": "bun run typecheck && bun run test && bun run build && bun run restore:check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply pulsemon-db",
     "db:seed": "wrangler d1 execute pulsemon-db --file=./seed.sql",
@@ -22,7 +25,9 @@
     "dr:check": "bun scripts/dr-check.ts",
     "otlp:certify": "bun scripts/otlp-certify.ts",
     "restore:check": "bun scripts/restore-check.ts",
-    "smoke": "bun scripts/smoke.ts"
+    "smoke": "bun scripts/smoke.ts",
+    "client:build": "bun run --cwd packages/client build",
+    "client:type-check": "bun run --cwd packages/client type-check"
   },
   "dependencies": {
     "@starfederation/datastar-sdk": "^1.0.0",
@@ -36,6 +41,7 @@
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.20.1",
     "@cloudflare/workers-types": "^4.20250214.0",
+    "@multiverse-com/pulsemon": "workspace:*",
     "@tailwindcss/vite": "^4.1.18",
     "@types/bun": "^1.3.9",
     "typescript": "^6.0.3",

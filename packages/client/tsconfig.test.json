@@ -1,0 +1,6 @@
+{
+  // Tests run under bun:test; the PACKAGE itself stays node-typed (tsconfig.json).
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node", "bun"] },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

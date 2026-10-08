@@ -8,7 +8,7 @@ each test context.
 - `helpers.ts`: `createTestContext`, D1 shim, seed helpers.
 - `api/`: route/API tests through Hono requests.
 - `lib/`: direct Effect service and query tests.
-- `sdk/`: client SDK tests.
+- `contract/`: drives the built `packages/client` through `/api/ingest/batch`.
 - `fixtures/`: shared deterministic payloads, especially OTLP fixtures.
 - `routes.test.ts`: page-level route smoke tests.
 

@@ -53,8 +53,8 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 
 ## Using Pulsemon
 
-Pulsemon is instrumented over HTTP. This repo includes a TypeScript SDK in
-`src/sdk`, and applications can also send JSON records directly to
+Pulsemon is instrumented over HTTP. This repo includes a TypeScript client in
+`packages/client`, and applications can also send JSON records directly to
 `/api/ingest/*`. The UI reads those records from D1.
 
 The basic model is:
@@ -450,69 +450,57 @@ curl -s "$PULSEMON_URL/api/ingest/voice/turns" \
 
 ### Instrumenting an app
 
-Use the TypeScript SDK from `src/sdk` to keep instrumentation consistent:
+Use the one client, [`@multiverse-com/pulsemon`](packages/client/README.md) — the
+same package every DPT surface ships. Records buffer; `flush()` sends them in a
+single `POST /api/ingest/batch`; nothing here ever throws or blocks a request:
 
 ```ts
-import { PulsemonClient, traceparent } from "./src/sdk";
+import { createPulsemonClient } from "@multiverse-com/pulsemon";
 
-const pulsemon = new PulsemonClient({
-  endpoint: process.env.PULSEMON_URL ?? "http://localhost:8788",
-  apiKey: process.env.PULSEMON_KEY!,
+// PULSEMON_INGEST_URL + PULSEMON_INGEST_KEY from the environment; without both
+// the client is a no-op (`enabled: false`), not a degraded mode.
+const pulsemon = createPulsemonClient(env, {
+  onError: (detail) => console.warn("pulsemon batch rejected", detail),
+});
+
+pulsemon.connection({
+  id: callId,
   service: "voice-gateway",
-  defaultAttributes: { environment: process.env.NODE_ENV },
+  connectionType: "webrtc",
+  sessionId,
+  startedAt: Date.now(),
 });
 
-const connection = await pulsemon.connection({
-  connection_type: "ws",
-  client_id: "demo-client",
-  session_id: "demo-session",
+pulsemon.span({
+  traceId,
+  connectionId: callId,
+  service: "voice-gateway",
+  operation: "llm.generate",          // a route/operation PATTERN, never a resolved path
+  startedAt,
+  endedAt: Date.now(),
+  durationMs: Date.now() - startedAt,
+  status: "ok",
+  attributes: { provider: "openai" }, // scalars only; content-shaped keys are scrubbed
 });
 
-await pulsemon.withSpan(
-  {
-    traceId: crypto.randomUUID().replaceAll("-", ""),
-    connectionId: connection.id,
-    operation: "llm.generate",
-    attributes: { provider: "openai" },
-  },
-  async (span) => {
-    await fetch("https://api.example/agent", {
-      headers: { traceparent: traceparent(span) },
-    });
-  }
-);
-
-await pulsemon.log({
-  level: "info",
-  message: "agent response streamed",
-  connection_id: connection.id,
+pulsemon.voiceTurn({
+  connectionId: callId,
+  sessionId,
+  role: "agent",
+  llmLatencyMs: 850,
+  ttsLatencyMs: 320,
+  transcript,                          // reaches the wire ONLY with PULSEMON_CONTENT_CAPTURE="true"
 });
 
-await pulsemon.voiceTurn({
-  connection_id: connection.id,
-  session_id: "demo-session",
-  role: "assistant",
-  transcript: "Your account balance is...",
-  llm_latency_ms: 850,
-  tts_latency_ms: 320,
-});
+pulsemon.connectionUpdate({ id: callId, status: "closed", endedAt: Date.now(), durationMs });
+
+ctx.waitUntil(pulsemon.flush());       // one subrequest, off the critical path
 ```
 
-For high-volume services, buffer records and flush them through the batch
-endpoint:
-
-```ts
-const batch = pulsemon.batcher()
-  .log({ level: "info", message: "turn started" })
-  .metric({ metric_name: "voice.latency_ms", metric_type: "histogram", value: 240 })
-  .agentToolCall({
-    tool_name: "lookup_account",
-    status: "ok",
-    duration_ms: 90,
-  });
-
-await batch.flush();
-```
+`examples/local-logging-app.ts` is a runnable version against a local receiver
+(`bun run client:build && bun run example:logs`). The invariants — content-free
+by default, inert without config, never on the critical path, one subrequest
+per flush — live in [`packages/client/AGENTS.md`](packages/client/AGENTS.md).
 
 ### Ingest endpoints
 
