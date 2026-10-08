@@ -75,6 +75,7 @@ For local development, create `.dev.vars`:
 
 ```bash
 INGEST_API_KEY=local-dev-key
+UI_BASIC_AUTH=dev:dev
 ```
 
 For a deployed Worker, set the secret:
@@ -112,7 +113,8 @@ wrangler secret put UI_USERS
 wrangler secret put UI_ROLE_GROUPS
 ```
 
-`UI_BASIC_AUTH` protects pages and read APIs with HTTP Basic auth when set.
+The UI fails closed: with none of `UI_BASIC_AUTH`, `UI_USERS` or OIDC configured,
+pages and read APIs return 401. `UI_BASIC_AUTH` protects them with HTTP Basic auth.
 `UI_USERS` can replace it with role-aware Basic auth. Admin routes require an
 `admin` role; `viewer` users can read the UI but cannot run admin actions:
 

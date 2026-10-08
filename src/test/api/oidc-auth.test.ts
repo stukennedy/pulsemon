@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { OIDC_SESSION_COOKIE, OIDC_STATE_COOKIE } from "@/lib/oidc";
 import type { Env } from "@/types";
 import { createTestContext } from "../helpers";
@@ -34,6 +34,24 @@ function cookiePair(setCookie: string | null, name: string) {
   const match = setCookie?.match(new RegExp(`${name}=([^;]+)`));
   if (!match) throw new Error(`Missing ${name} cookie`);
   return `${name}=${match[1]}`;
+}
+
+async function startLoginAndCompleteCallback(
+  returnTo: string,
+  tokenResponse: (nonce: string | null) => Response | Promise<Response>
+) {
+  const ctx = createTestContext({ env: oidcEnv });
+  const login = await ctx.request(`/auth/login?return_to=${returnTo}`);
+  const location = new URL(login.headers.get("Location") ?? "");
+  const state = location.searchParams.get("state");
+  const nonce = location.searchParams.get("nonce");
+
+  globalThis.fetch = (async () => tokenResponse(nonce)) as unknown as typeof fetch;
+  const callback = await ctx.request(`/auth/callback?code=code-redirect&state=${state}`, {
+    headers: { Cookie: cookiePair(login.headers.get("Set-Cookie"), OIDC_STATE_COOKIE) },
+  });
+
+  return { callback, ctx };
 }
 
 afterEach(() => {
@@ -106,6 +124,51 @@ describe("OIDC UI auth", () => {
       actor_role: "admin",
       outcome: "success",
     });
+  });
+
+  for (const testCase of [
+    { name: "an encoded backslash network path", returnTo: "%2F%5Cevil.example", expected: "/" },
+    { name: "a double-slash network path", returnTo: "%2F%2Fevil.example", expected: "/" },
+    { name: "a safe relative path", returnTo: "%2Fmonitors%3Fstatus%3Derror", expected: "/monitors?status=error" },
+  ]) {
+    it(`redirects ${testCase.name} to a safe same-origin location after callback`, async () => {
+      const result = await startLoginAndCompleteCallback(testCase.returnTo, (nonce) => Response.json({
+        id_token: unsignedJwt({
+          iss: "https://idp.example",
+          aud: "pulsemon",
+          exp: Math.floor(Date.now() / 1000) + 600,
+          nonce,
+          email: "ops@example.com",
+          groups: ["platform-admins"],
+        }),
+      }));
+      expect(result.callback.status).toBe(302);
+      expect(result.callback.headers.get("Location")).toBe(testCase.expected);
+    });
+  }
+
+  it("does not expose an OIDC provider error description", async () => {
+    const providerDetail = "PROVIDER_SENTINEL: invalid_grant for ops@example.com";
+    const errorLog = spyOn(console, "error").mockImplementation(() => undefined);
+    const { callback, ctx } = await startLoginAndCompleteCallback("%2F", () => Response.json({
+      error: "invalid_grant",
+      error_description: providerDetail,
+    }, { status: 400 }));
+    const logged = errorLog.mock.calls.flat().join(" ");
+    errorLog.mockRestore();
+
+    expect(callback.status).toBe(502);
+    const responseBody = await callback.text();
+    expect(responseBody).toBe("OIDC authentication failed");
+    expect(responseBody).not.toContain(providerDetail);
+    expect(logged).toContain("provider_token_exchange_failed");
+    expect(logged).not.toContain(providerDetail);
+
+    const audit = ctx.sqlite
+      .prepare("SELECT metadata FROM audit_events WHERE action = ? AND outcome = ?")
+      .get("auth.oidc", "failed") as { metadata: string };
+    expect(audit.metadata).not.toContain(providerDetail);
+    expect(JSON.parse(audit.metadata)).toMatchObject({ reason: "provider_token_exchange_failed" });
   });
 
   it("rejects OIDC users that do not match a configured role", async () => {

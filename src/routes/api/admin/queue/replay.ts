@@ -2,7 +2,7 @@ import type { Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { Effect, Either } from "effect";
 import type { Env } from "@/types";
-import { errorStatus, ValidationError } from "@/lib/effect/errors";
+import { errorStatus, MalformedRequestError, ValidationError } from "@/lib/effect/errors";
 import { writeTelemetryQueueMessage, type TelemetryQueueMessage } from "@/lib/effect/telemetry-queue";
 
 function bearerToken(c: Context<{ Bindings: Env }>) {
@@ -35,7 +35,7 @@ async function readJson(c: Context<{ Bindings: Env }>) {
   try {
     return await c.req.json();
   } catch {
-    return new ValidationError({ message: "Invalid JSON" });
+    return new MalformedRequestError({ message: "Invalid JSON" });
   }
 }
 
@@ -45,9 +45,10 @@ export const onRequestPost = async (c: Context<{ Bindings: Env }>) => {
   if (bearerToken(c) !== expected) return c.json({ error: "Unauthorized" }, 401);
 
   const body = await readJson(c);
-  if (body instanceof ValidationError) return c.json({ error: body.message }, 400);
+  if (body instanceof MalformedRequestError) return c.json({ error: body.message }, 400);
   if (!isTelemetryQueueMessage(body)) {
-    return c.json({ error: "Invalid telemetry queue message" }, 400);
+    const error = new ValidationError({ message: "Invalid telemetry queue message" });
+    return c.json({ error: error.message }, errorStatus(error) as ContentfulStatusCode);
   }
 
   const result = await Effect.runPromise(Effect.either(writeTelemetryQueueMessage(c.env, body)));

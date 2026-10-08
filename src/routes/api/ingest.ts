@@ -4,6 +4,7 @@ import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import {
   errorStatus,
+  MalformedRequestError,
   PayloadTooLargeError,
   UnsupportedMediaTypeError,
   ValidationError,
@@ -146,11 +147,11 @@ function isProtobufContentType(contentType: string) {
 function decodeTextBody(
   c: Context<{ Bindings: Env }>,
   encoding: string
-): Effect.Effect<string, ValidationError | UnsupportedMediaTypeError> {
+): Effect.Effect<string, MalformedRequestError | UnsupportedMediaTypeError> {
   if (!encoding || encoding === "identity") {
     return Effect.tryPromise({
       try: () => c.req.text(),
-      catch: () => new ValidationError({ message: "Invalid body" }),
+      catch: () => new MalformedRequestError({ message: "Invalid body" }),
     });
   }
 
@@ -173,18 +174,18 @@ function decodeTextBody(
       const response = new Response(stream.pipeThrough(new DecompressionStream("gzip")));
       return response.text();
     },
-    catch: () => new ValidationError({ message: "Invalid gzip body" }),
+    catch: () => new MalformedRequestError({ message: "Invalid gzip body" }),
   });
 }
 
 function decodeBinaryBody(
   c: Context<{ Bindings: Env }>,
   encoding: string
-): Effect.Effect<Uint8Array, ValidationError | UnsupportedMediaTypeError> {
+): Effect.Effect<Uint8Array, MalformedRequestError | UnsupportedMediaTypeError> {
   if (!encoding || encoding === "identity") {
     return Effect.tryPromise({
       try: async () => new Uint8Array(await c.req.arrayBuffer()),
-      catch: () => new ValidationError({ message: "Invalid body" }),
+      catch: () => new MalformedRequestError({ message: "Invalid body" }),
     });
   }
 
@@ -207,11 +208,11 @@ function decodeBinaryBody(
       const response = new Response(stream.pipeThrough(new DecompressionStream("gzip")));
       return new Uint8Array(await response.arrayBuffer());
     },
-    catch: () => new ValidationError({ message: "Invalid gzip body" }),
+    catch: () => new MalformedRequestError({ message: "Invalid gzip body" }),
   });
 }
 
-function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, ValidationError | PayloadTooLargeError | UnsupportedMediaTypeError> {
+function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, MalformedRequestError | PayloadTooLargeError | UnsupportedMediaTypeError> {
   return Effect.gen(function* () {
     const maxBytes = maxBodyBytes(c);
     const contentLength = Number(c.req.header("content-length") ?? 0);
@@ -241,7 +242,7 @@ function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, Validat
     try {
       return JSON.parse(text) as unknown;
     } catch {
-      return yield* Effect.fail(new ValidationError({ message: "Invalid JSON" }));
+      return yield* Effect.fail(new MalformedRequestError({ message: "Invalid JSON" }));
     }
   });
 }
@@ -249,7 +250,7 @@ function readJson(c: Context<{ Bindings: Env }>): Effect.Effect<unknown, Validat
 function readOtlp(
   c: Context<{ Bindings: Env }>,
   decodeProtobuf: (bytes: Uint8Array) => unknown
-): Effect.Effect<unknown, ValidationError | PayloadTooLargeError | UnsupportedMediaTypeError> {
+): Effect.Effect<unknown, MalformedRequestError | PayloadTooLargeError | UnsupportedMediaTypeError> {
   return Effect.gen(function* () {
     const maxBytes = maxBodyBytes(c);
     const contentLength = Number(c.req.header("content-length") ?? 0);
@@ -270,9 +271,8 @@ function readOtlp(
 
     try {
       return decodeProtobuf(bytes);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "Invalid OTLP protobuf";
-      return yield* Effect.fail(new ValidationError({ message: `Invalid OTLP protobuf: ${message}` }));
+    } catch {
+      return yield* Effect.fail(new MalformedRequestError({ message: "Invalid OTLP protobuf" }));
     }
   });
 }
@@ -301,16 +301,20 @@ export const postConnections = (c: Context<{ Bindings: Env }>) =>
     isQueuedMode(c) ? 202 : 201
   );
 
-export const patchConnection = (c: Context<{ Bindings: Env }>) =>
-  runJson(
+export const patchConnection = (c: Context<{ Bindings: Env }>) => {
+  const id = c.req.param("id");
+  if (id === undefined) return c.notFound();
+
+  return runJson(
     c,
     readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
       c,
-      () => enqueueConnectionPatch(queuedDeps(c, "connections"), c.req.param("id"), body),
-      () => patchConnectionEffect(deps(c, "connections"), c.req.param("id"), body)
+      () => enqueueConnectionPatch(queuedDeps(c, "connections"), id, body),
+      () => patchConnectionEffect(deps(c, "connections"), id, body)
     ))),
     isQueuedMode(c) ? 202 : 200
   );
+};
 
 export const postSpans = (c: Context<{ Bindings: Env }>) =>
   runJson(
@@ -323,16 +327,20 @@ export const postSpans = (c: Context<{ Bindings: Env }>) =>
     isQueuedMode(c) ? 202 : 201
   );
 
-export const patchSpan = (c: Context<{ Bindings: Env }>) =>
-  runJson(
+export const patchSpan = (c: Context<{ Bindings: Env }>) => {
+  const id = c.req.param("id");
+  if (id === undefined) return c.notFound();
+
+  return runJson(
     c,
     readJson(c).pipe(Effect.flatMap((body) => ingestProgram(
       c,
-      () => enqueueSpanPatch(queuedDeps(c, "traces"), c.req.param("id"), body),
-      () => patchSpanEffect(deps(c, "traces"), c.req.param("id"), body)
+      () => enqueueSpanPatch(queuedDeps(c, "traces"), id, body),
+      () => patchSpanEffect(deps(c, "traces"), id, body)
     ))),
     isQueuedMode(c) ? 202 : 200
   );
+};
 
 export const postEvents = (c: Context<{ Bindings: Env }>) =>
   runJson(

@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach } from "bun:test";
-import { processTelemetryQueueMessages } from "@/lib/effect/telemetry-queue";
+import { describe, expect, it, beforeEach, spyOn } from "bun:test";
+import { processTelemetryQueueBatch, processTelemetryQueueMessages } from "@/lib/effect/telemetry-queue";
 import {
   createRawTelemetryBucketHarness,
   createTelemetryQueueHarness,
@@ -159,6 +159,26 @@ describe("POST /api/ingest", () => {
     expect(row.count).toBe(0);
   });
 
+  it("treats invalid ingest configuration as an internal server error", async () => {
+    ctx = createTestContext({ env: { INGEST_SAMPLE_RATE: "not-a-rate" } });
+    const errorLog = spyOn(console, "error").mockImplementation(() => undefined);
+
+    const res = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ service: "voice-gateway", level: "info", message: "safe" }),
+    });
+    const logged = errorLog.mock.calls.flat().join(" ");
+    errorLog.mockRestore();
+
+    const body = await res.text();
+    expect(res.status).toBe(500);
+    expect(JSON.parse(body)).toEqual({ error: "Internal server error" });
+    expect(body).not.toContain("INGEST_SAMPLE_RATE");
+    expect(logged).toContain("ConfigurationError");
+    expect(logged).not.toContain("not-a-rate");
+  });
+
   it("enforces cardinality budgets for metric tags", async () => {
     ctx = createTestContext({ env: { INGEST_CARDINALITY_MAX_VALUES_PER_KEY: "1" } });
 
@@ -202,7 +222,7 @@ describe("POST /api/ingest", () => {
         tags: { provider: "tts" },
       }),
     });
-    expect(overBudget.status).toBe(400);
+    expect(overBudget.status).toBe(422);
     const body = await overBudget.json() as { error: string };
     expect(body.error).toContain("Cardinality budget exceeded for metrics.tags.provider");
 
@@ -219,9 +239,20 @@ describe("POST /api/ingest", () => {
       body: JSON.stringify({ connection_type: "ws" }),
     });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const body = await res.json() as { error: string };
     expect(body.error).toContain("service");
+  });
+
+  it("returns 400 for malformed ingest JSON", async () => {
+    const res = await ctx.request("/api/ingest/connections", {
+      method: "POST",
+      headers: authHeaders,
+      body: '{"service":',
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json() as unknown).toEqual({ error: "Invalid JSON" });
   });
 
   it("inserts a connection through the Effect ingest pipeline", async () => {
@@ -399,7 +430,7 @@ describe("POST /api/ingest", () => {
       }),
     });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     const body = await res.json() as { error: string };
     expect(body.error).toContain("service");
   });
@@ -535,6 +566,37 @@ describe("POST /api/ingest", () => {
     expect(body.error).toContain("Telemetry queue is not configured");
   });
 
+  it("does not expose queue provider exception details", async () => {
+    const providerDetail = "QUEUE_SENTINEL: account token rejected for ops@example.com";
+    const failingQueue = {
+      send: async () => {
+        throw new Error(providerDetail);
+      },
+    } as unknown as Queue;
+    ctx = createTestContext({
+      env: {
+        INGEST_MODE: "queued",
+        TELEMETRY_QUEUE: failingQueue,
+      },
+    });
+    const errorLog = spyOn(console, "error").mockImplementation(() => undefined);
+
+    const res = await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ service: "voice-gateway", level: "info", message: "safe" }),
+    });
+    const logged = errorLog.mock.calls.flat().join(" ");
+    errorLog.mockRestore();
+
+    const body = await res.text();
+    expect(res.status).toBe(500);
+    expect(JSON.parse(body)).toEqual({ error: "Internal server error" });
+    expect(body).not.toContain(providerDetail);
+    expect(logged).toContain("InternalError");
+    expect(logged).not.toContain(providerDetail);
+  });
+
   it("validates queued requests before enqueueing", async () => {
     const queue = createTelemetryQueueHarness();
     ctx = createTestContext({
@@ -550,8 +612,24 @@ describe("POST /api/ingest", () => {
       body: JSON.stringify({ connection_type: "ws" }),
     });
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(queue.messages).toHaveLength(0);
+  });
+
+  it("returns 422 for a well-formed invalid queue replay envelope", async () => {
+    ctx = createTestContext({ env: { MAINTENANCE_API_KEY: "maintenance-key" } });
+
+    const res = await ctx.request("/api/admin/queue/replay", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer maintenance-key",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ version: 1, signal: "logs" }),
+    });
+
+    expect(res.status).toBe(422);
+    expect(await res.json() as unknown).toEqual({ error: "Invalid telemetry queue message" });
   });
 
   it("replays exported queue messages through the maintenance endpoint", async () => {
@@ -604,5 +682,40 @@ describe("POST /api/ingest", () => {
       message: "replayed ingest",
     });
     expect(rawTelemetry.objects).toHaveLength(1);
+  });
+
+  it("logs a safe classification when a queue message is retried", async () => {
+    const queue = createTelemetryQueueHarness();
+    ctx = createTestContext({ env: { INGEST_MODE: "queued", TELEMETRY_QUEUE: queue.queue } });
+    await ctx.request("/api/ingest/logs", {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ service: "voice-gateway", level: "info", message: "safe" }),
+    });
+
+    let retried = false;
+    let acknowledged = false;
+    const providerDetail = "R2_SENTINEL: ops@example.com";
+    const errorLog = spyOn(console, "error").mockImplementation(() => undefined);
+    await processTelemetryQueueBatch({
+      DB: ctx.d1,
+      RAW_TELEMETRY_REQUIRED: "true",
+      RAW_TELEMETRY: { put: async () => { throw new Error(providerDetail); } } as unknown as R2Bucket,
+    }, {
+      messages: [{
+        body: queue.messages[0],
+        attempts: 1,
+        retry: () => { retried = true; },
+        ack: () => { acknowledged = true; },
+      }],
+    } as unknown as MessageBatch<never>);
+    const logged = errorLog.mock.calls.flat().join(" ");
+    errorLog.mockRestore();
+
+    expect(retried).toBe(true);
+    expect(acknowledged).toBe(false);
+    expect(logged).toContain("pulsemon.queue_message_failed");
+    expect(logged).toContain("InternalError");
+    expect(logged).not.toContain(providerDetail);
   });
 });

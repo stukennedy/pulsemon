@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { loadRoutes } from "@/router";
 import { loadLayouts } from "@/layouts";
 import { checkUiAuth } from "@/lib/auth";
+import { unexpectedErrorResponse } from "@/lib/http-errors";
 import type { TelemetryQueueMessage } from "@/lib/effect/telemetry-queue";
 import type { Env } from "@/types";
 import { readFileSync, readdirSync } from "fs";
@@ -164,12 +165,16 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
 
   const d1 = createD1Shim(sqlite);
   const app = new Hono<{ Bindings: Env }>();
+  app.onError(unexpectedErrorResponse);
+  const oidcConfigured = Boolean(options.env?.OIDC_ISSUER || options.env?.OIDC_CLIENT_ID);
+  const useDefaultUiAuth = !oidcConfigured && options.env?.UI_BASIC_AUTH === undefined;
 
   app.use("*", async (c, next) => {
     (c.env as any) = {
       ...c.env,
       DB: d1,
       INGEST_API_KEY: "test-key",
+      ...(useDefaultUiAuth ? { UI_BASIC_AUTH: "test-ui:test-ui" } : {}),
       SEARCH_SESSION: {
         idFromName: () => ({ toString: () => "test-id" }),
         get: () => ({ fetch: () => new Response("ws mock", { status: 101 }) }),
@@ -345,7 +350,17 @@ export function createTestContext(options: TestContextOptions = {}): TestContext
     );
   };
 
-  const request = async (path: string, init?: RequestInit) => app.request(path, init);
+  const request = async (path: string, init?: RequestInit) => {
+    const headers = new Headers(init?.headers);
+    const pathname = new URL(path, "http://pulsemon.test").pathname;
+    const isDedicatedTokenRoute = pathname === "/api/admin/maintenance"
+      || pathname === "/api/admin/queue/replay";
+    if (useDefaultUiAuth && !pathname.startsWith("/api/ingest") && !isDedicatedTokenRoute
+      && !pathname.startsWith("/auth/") && !headers.has("Authorization")) {
+      headers.set("Authorization", `Basic ${btoa("test-ui:test-ui")}`);
+    }
+    return app.request(path, { ...init, headers });
+  };
 
   return {
     app,

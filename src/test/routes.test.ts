@@ -201,6 +201,14 @@ describe("Page routes", () => {
     expect(await authorized.text()).toContain("Dashboard");
   });
 
+  it("rejects protected UI routes when UI auth is unconfigured", async () => {
+    ctx = createTestContext({ env: { UI_BASIC_AUTH: undefined } });
+
+    const res = await ctx.request("/");
+
+    expect(res.status).toBe(401);
+  });
+
   it("does not apply optional UI basic auth to ingest routes", async () => {
     ctx = createTestContext({ env: { UI_BASIC_AUTH: "admin:secret" } });
 

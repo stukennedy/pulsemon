@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import type { Env } from "@/types";
 import type { ApiKeyContext } from "./auth";
-import { DatabaseError, RateLimitError, ValidationError } from "./errors";
+import { ConfigurationError, DatabaseError, RateLimitError } from "./errors";
 
 export interface IngestPressureConfig {
   readonly rateLimitPerMinute: number;
@@ -12,7 +12,7 @@ export interface IngestPressureController {
   readonly prepare: (
     context: ApiKeyContext,
     scope: string
-  ) => Effect.Effect<IngestPressureConfig, DatabaseError | RateLimitError | ValidationError>;
+  ) => Effect.Effect<IngestPressureConfig, ConfigurationError | DatabaseError | RateLimitError>;
 }
 
 type PressureEnv = Pick<Env, "INGEST_RATE_LIMIT_PER_MINUTE" | "INGEST_SAMPLE_RATE">;
@@ -39,12 +39,12 @@ function integerConfig(
   fallback: number,
   min: number,
   max: number
-): Effect.Effect<number, ValidationError> {
+): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(fallback);
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    return Effect.fail(new ValidationError({
+    return Effect.fail(new ConfigurationError({
       message: `${name} must be an integer between ${min} and ${max}`,
     }));
   }
@@ -58,12 +58,12 @@ function numberConfig(
   fallback: number,
   min: number,
   max: number
-): Effect.Effect<number, ValidationError> {
+): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(fallback);
 
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
-    return Effect.fail(new ValidationError({
+    return Effect.fail(new ConfigurationError({
       message: `${name} must be a number between ${min} and ${max}`,
     }));
   }
@@ -71,7 +71,7 @@ function numberConfig(
   return Effect.succeed(parsed);
 }
 
-export function ingestPressureConfigFromEnv(env: PressureEnv): Effect.Effect<IngestPressureConfig, ValidationError> {
+export function ingestPressureConfigFromEnv(env: PressureEnv): Effect.Effect<IngestPressureConfig, ConfigurationError> {
   return Effect.gen(function* () {
     const rateLimitPerMinute = yield* integerConfig(
       "INGEST_RATE_LIMIT_PER_MINUTE",

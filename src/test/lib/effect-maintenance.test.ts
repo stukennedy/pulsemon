@@ -92,8 +92,9 @@ describe("Effect maintenance service", () => {
 
     expect(Either.isLeft(result)).toBe(true);
     if (Either.isLeft(result)) {
-      expect(result.left._tag).toBe("ValidationError");
-      expect(result.left.message).toContain("RETENTION_DAYS");
+      expect(result.left._tag).toBe("ConfigurationError");
+      expect(result.left.message).toBe("Internal server error");
+      expect(result.left.internalMessage).toContain("RETENTION_DAYS");
     }
   });
 
@@ -104,8 +105,9 @@ describe("Effect maintenance service", () => {
 
     expect(Either.isLeft(result)).toBe(true);
     if (Either.isLeft(result)) {
-      expect(result.left._tag).toBe("ValidationError");
-      expect(result.left.message).toContain("MAINTENANCE_DELETE_CHUNK_SIZE");
+      expect(result.left._tag).toBe("ConfigurationError");
+      expect(result.left.message).toBe("Internal server error");
+      expect(result.left.internalMessage).toContain("MAINTENANCE_DELETE_CHUNK_SIZE");
     }
   });
 });

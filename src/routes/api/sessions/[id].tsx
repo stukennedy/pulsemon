@@ -7,8 +7,11 @@ import { getRealtimeSession } from "@/lib/effect/sessions";
 import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
+  const id = c.req.param("id");
+  if (id === undefined) return c.notFound();
+
   const result = await Effect.runPromise(Effect.either(
-    getRealtimeSession(c.env.DB, tenantScopeFromEnv(c.env), c.req.param("id"))
+    getRealtimeSession(c.env.DB, tenantScopeFromEnv(c.env), id)
   ));
 
   if (Either.isLeft(result)) {

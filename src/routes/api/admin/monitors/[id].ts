@@ -3,7 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import { requireAdminUi } from "@/lib/auth";
-import { errorStatus } from "@/lib/effect/errors";
+import { errorStatus, MalformedRequestError } from "@/lib/effect/errors";
 import {
   deleteMonitorDefinition,
   updateMonitorDefinition,
@@ -15,7 +15,7 @@ async function readJson(c: Context<{ Bindings: Env }>) {
   try {
     return await c.req.json();
   } catch {
-    return {};
+    return new MalformedRequestError({ message: "Invalid JSON" });
   }
 }
 
@@ -35,13 +35,19 @@ function monitorPatch(raw: any) {
 export const onRequestPatch = async (c: Context<{ Bindings: Env }>) => {
   const principal = await requireAdminUi(c);
   if (principal instanceof Response) return principal;
+  const id = c.req.param("id");
+  if (id === undefined) return c.notFound();
+  const body = await readJson(c);
+  if (body instanceof MalformedRequestError) {
+    return c.json({ error: body.message }, errorStatus(body) as ContentfulStatusCode);
+  }
 
   const result = await Effect.runPromise(Effect.either(
     updateMonitorDefinition(
       c.env.DB,
       tenantScopeFromEnv(c.env),
-      c.req.param("id"),
-      monitorPatch(await readJson(c))
+      id,
+      monitorPatch(body)
     )
   ));
 
@@ -56,9 +62,11 @@ export const onRequestPatch = async (c: Context<{ Bindings: Env }>) => {
 export const onRequestDelete = async (c: Context<{ Bindings: Env }>) => {
   const principal = await requireAdminUi(c);
   if (principal instanceof Response) return principal;
+  const id = c.req.param("id");
+  if (id === undefined) return c.notFound();
 
   const result = await Effect.runPromise(Effect.either(
-    deleteMonitorDefinition(c.env.DB, tenantScopeFromEnv(c.env), c.req.param("id"))
+    deleteMonitorDefinition(c.env.DB, tenantScopeFromEnv(c.env), id)
   ));
 
   if (Either.isLeft(result)) {

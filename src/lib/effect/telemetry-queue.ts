@@ -4,8 +4,10 @@ import type { Env, TenantScope } from "@/types";
 import { authorizeIngest, type ApiKeyContext, type ApiKeyDeps } from "./auth";
 import { makeIngestCardinalityController } from "./cardinality";
 import {
+  ConfigurationError,
   PayloadTooLargeError,
   ValidationError,
+  InternalError,
   MissingConfigError,
   type IngestError,
 } from "./errors";
@@ -153,22 +155,22 @@ function queueMaxBytes(value: string | undefined) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_QUEUE_MAX_BYTES;
 }
 
-function queueMaxOperations(value: string | undefined): Effect.Effect<number, ValidationError> {
+function queueMaxOperations(value: string | undefined): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(DEFAULT_QUEUE_MAX_OPERATIONS);
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_QUEUE_MAX_OPERATIONS) {
-    return Effect.fail(new ValidationError({
+    return Effect.fail(new ConfigurationError({
       message: `INGEST_QUEUE_MAX_OPERATIONS must be an integer between 1 and ${MAX_QUEUE_MAX_OPERATIONS}`,
     }));
   }
   return Effect.succeed(parsed);
 }
 
-function sampleRate(value: string | undefined): Effect.Effect<number, ValidationError> {
+function sampleRate(value: string | undefined): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(1);
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    return Effect.fail(new ValidationError({ message: "INGEST_SAMPLE_RATE must be a number between 0 and 1" }));
+    return Effect.fail(new ConfigurationError({ message: "INGEST_SAMPLE_RATE must be a number between 0 and 1" }));
   }
   return Effect.succeed(parsed);
 }
@@ -514,7 +516,7 @@ function enqueueMessage(
         await deps.queue!.send(message, { contentType: "json" });
         return accepted(message);
       },
-      catch: (error) => new MissingConfigError({
+      catch: (error) => new InternalError({
         message: error instanceof Error ? error.message : "Failed to enqueue telemetry",
       }),
     });
@@ -754,6 +756,12 @@ export async function processTelemetryQueueBatch(
   for (const message of batch.messages) {
     const result = await Effect.runPromise(Effect.either(writeTelemetryQueueMessage(env, message.body)));
     if (result._tag === "Left") {
+      console.error(JSON.stringify({
+        event: "pulsemon.queue_message_failed",
+        error_type: result.left._tag,
+        attempts: message.attempts,
+        action: "retry",
+      }));
       message.retry({ delaySeconds: Math.min(300, 2 ** Math.min(message.attempts, 8)) });
     } else {
       message.ack();
