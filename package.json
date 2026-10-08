@@ -29,7 +29,7 @@
     "drizzle-kit": "^0.31.9",
     "drizzle-orm": "^0.45.1",
     "effect": "^3.21.2",
-    "hono": "^4.7.0",
+    "hono": "^4.13.13",
     "hono-router": "^1.3.1",
     "nanoid": "^5.1.5"
   },
