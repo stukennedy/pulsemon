@@ -64,8 +64,21 @@
     return { page: page, canvas: canvas };
   }
 
+  // rrweb-player re-applies its centring transform on resize, so pin the
+  // snapshot to the stage origin with a rule it cannot override.
+  function pinSnapshotStyles() {
+    if (document.getElementById("pm-heatmap-style")) return;
+    var style = document.createElement("style");
+    style.id = "pm-heatmap-style";
+    style.textContent =
+      ".pm-heatmap-page .rr-player{background:transparent!important;box-shadow:none!important;border-radius:0!important}" +
+      ".pm-heatmap-page .replayer-wrapper{transform:none!important;left:0!important;top:0!important;position:absolute!important}";
+    document.head.appendChild(style);
+  }
+
   function renderSnapshot(container, events, pageHeight) {
     if (!window.rrwebPlayer || !events || events.length < 2) return;
+    pinSnapshotStyles();
     var player = new window.rrwebPlayer.Player({
       target: container,
       props: { events: events, width: pageWidth, height: pageHeight, autoPlay: false, showController: false, skipInactive: false },
