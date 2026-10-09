@@ -156,6 +156,10 @@ export function createRawTelemetryBucketHarness(): RawTelemetryBucketHarness {
       if (!found) return null;
       return { json: async () => JSON.parse(found.body), text: async () => found.body };
     },
+    delete: async (keys: string | string[]) => {
+      const doomed = new Set(Array.isArray(keys) ? keys : [keys]);
+      for (let i = objects.length - 1; i >= 0; i--) if (doomed.has(objects[i]!.key)) objects.splice(i, 1);
+    },
   } as unknown as R2Bucket;
 
   return { objects, bucket };

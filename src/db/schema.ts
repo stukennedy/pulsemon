@@ -377,6 +377,74 @@ export const slo_evaluations = sqliteTable("slo_evaluations", {
   index("idx_slo_evaluations_tenant_slo_time").on(table.workspace_id, table.project_id, table.slo_id, table.evaluated_at),
 ]);
 
+export const browser_sessions = sqliteTable("browser_sessions", {
+  id: text("id").notNull(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  started_at: text("started_at").notNull(),
+  last_seen_at: text("last_seen_at").notNull(),
+  duration_ms: integer("duration_ms").notNull().default(0),
+  user_id: text("user_id"),
+  entry_path: text("entry_path").notNull(),
+  exit_path: text("exit_path").notNull(),
+  device: text("device", { enum: ["desktop", "tablet", "mobile"] }).notNull(),
+  viewport_w: integer("viewport_w").notNull(),
+  viewport_h: integer("viewport_h").notNull(),
+  user_agent: text("user_agent"),
+  country: text("country"),
+  page_views: integer("page_views").notNull().default(0),
+  clicks: integer("clicks").notNull().default(0),
+  rage_clicks: integer("rage_clicks").notNull().default(0),
+  dead_clicks: integer("dead_clicks").notNull().default(0),
+  errors: integer("errors").notNull().default(0),
+  replay_chunks: integer("replay_chunks").notNull().default(0),
+  replay_bytes: integer("replay_bytes").notNull().default(0),
+}, (table) => [
+  primaryKey({ columns: [table.workspace_id, table.project_id, table.id] }),
+  index("idx_browser_sessions_tenant_last_seen").on(table.workspace_id, table.project_id, table.last_seen_at),
+]);
+
+export const browser_batches = sqliteTable("browser_batches", {
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  session_id: text("session_id").notNull(),
+  seq: integer("seq").notNull(),
+  received_at: text("received_at").notNull(),
+  replay_key: text("replay_key"),
+  replay_bytes: integer("replay_bytes").notNull().default(0),
+  first_event_at: integer("first_event_at"),
+  last_event_at: integer("last_event_at"),
+}, (table) => [
+  primaryKey({ columns: [table.workspace_id, table.project_id, table.session_id, table.seq] }),
+  index("idx_browser_batches_tenant_received").on(table.workspace_id, table.project_id, table.received_at),
+]);
+
+export const browser_events = sqliteTable("browser_events", {
+  id: text("id").primaryKey(),
+  workspace_id: text("workspace_id").notNull(),
+  project_id: text("project_id").notNull(),
+  session_id: text("session_id").notNull(),
+  timestamp: text("timestamp").notNull(),
+  type: text("type", { enum: ["pageview", "click", "rage_click", "dead_click", "scroll", "error", "custom"] }).notNull(),
+  path: text("path").notNull(),
+  device: text("device", { enum: ["desktop", "tablet", "mobile"] }).notNull(),
+  selector: text("selector"),
+  x: real("x"),
+  y: real("y"),
+  viewport_w: integer("viewport_w"),
+  viewport_h: integer("viewport_h"),
+  doc_h: integer("doc_h"),
+  depth: real("depth"),
+  message: text("message"),
+  source: text("source"),
+  name: text("name"),
+  props: text("props"),
+}, (table) => [
+  index("idx_browser_events_tenant_path_type").on(table.workspace_id, table.project_id, table.path, table.type, table.timestamp),
+  index("idx_browser_events_tenant_session").on(table.workspace_id, table.project_id, table.session_id, table.timestamp),
+  index("idx_browser_events_tenant_timestamp").on(table.workspace_id, table.project_id, table.timestamp),
+]);
+
 export type Connection = typeof connections.$inferSelect;
 export type ConnectionInsert = typeof connections.$inferInsert;
 export type Span = typeof spans.$inferSelect;
@@ -411,3 +479,9 @@ export type SloDefinitionRecord = typeof slo_definitions.$inferSelect;
 export type SloDefinitionInsert = typeof slo_definitions.$inferInsert;
 export type SloEvaluationRecord = typeof slo_evaluations.$inferSelect;
 export type SloEvaluationInsert = typeof slo_evaluations.$inferInsert;
+export type BrowserSession = typeof browser_sessions.$inferSelect;
+export type BrowserSessionInsert = typeof browser_sessions.$inferInsert;
+export type BrowserBatch = typeof browser_batches.$inferSelect;
+export type BrowserBatchInsert = typeof browser_batches.$inferInsert;
+export type BrowserEvent = typeof browser_events.$inferSelect;
+export type BrowserEventInsert = typeof browser_events.$inferInsert;

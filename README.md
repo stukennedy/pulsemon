@@ -11,6 +11,7 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 - **Trace waterfall** — Jaeger-style span visualisation with parent-child nesting
 - **Faceted search** — filter by service, type, status, client, session
 - **Realtime monitors** — voice latency, interruption, agent tool error, and connection error SLO checks
+- **Session replay and heatmaps** — privacy-first browser recording (rrweb), click, rage-click, dead-click and scroll heatmaps, frustration and error signals per session
 - **Real-time updates** — WebSocket-driven UI via HTMX
 
 ## Architecture
@@ -34,6 +35,9 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 | `agent_tool_calls` | Agent tool execution, retries, inputs, outputs, and errors |
 | `metric_rollups_1m` | 1-minute metric rollups produced by maintenance |
 | `monitor_evaluations` | Realtime voice/agent/connection SLO snapshots |
+| `browser_sessions` | One row per recorded browser session with frustration and replay counts |
+| `browser_events` | Page views, clicks, rage/dead clicks, scroll depth, errors and custom events |
+| `browser_batches` | Browser batch dedupe and the R2 key of each replay chunk |
 
 ## Pages
 
@@ -50,6 +54,9 @@ Think DataDog meets Honeycomb, designed specifically for the patterns that matte
 | `/traces/:id` | Waterfall trace view |
 | `/voice` | Voice pipeline and realtime session summaries |
 | `/sessions/:id` | Realtime voice/agent session timeline |
+| `/replays` | Browser sessions with frustration filters |
+| `/replays/:id` | Session replay player with an event timeline |
+| `/heatmaps` | Click, rage-click, dead-click and scroll-depth heatmaps per page |
 
 ## Using Pulsemon
 
@@ -501,6 +508,35 @@ ctx.waitUntil(pulsemon.flush());       // one subrequest, off the critical path
 by default, inert without config, never on the critical path, one subrequest
 per flush — live in [`packages/client/AGENTS.md`](packages/client/AGENTS.md).
 
+### Session replay and heatmaps
+
+[`pulsemon-browser`](packages/browser/README.md) records browser sessions with
+rrweb and reports page views, clicks, rage and dead clicks, scroll depth, errors
+and custom events. Text and inputs are masked by default. Browsers cannot hold
+the ingest secret, so browser ingest uses public keys bound to an origin
+allowlist:
+
+```bash
+wrangler secret put BROWSER_INGEST_KEYS
+# {"pk_live_web": {"origins": ["https://app.example.com"], "workspace_id": "default", "project_id": "default"}}
+```
+
+```ts
+import { initPulsemonBrowser } from "pulsemon-browser";
+
+initPulsemonBrowser({ endpoint: "https://pulsemon.example.com", key: "pk_live_web" });
+```
+
+Replay chunks are stored in the `RAW_TELEMETRY` R2 bucket; without it, batches
+carrying replay data are refused with 503 while interaction events still work if
+replay is disabled in the SDK. `RETENTION_DAYS` maintenance removes expired
+sessions, events and replay objects. The wire format is in
+[`specs/browser-analytics.md`](specs/browser-analytics.md).
+
+A public key is not a secret: anyone can send data with it, and the origin check
+only stops other websites, not scripts. Use the per-minute ingest rate limit
+(`INGEST_RATE_LIMIT_PER_MINUTE`, applied per browser key) on public deployments.
+
 ### Ingest endpoints
 
 | Method | Route | Purpose |
@@ -518,6 +554,7 @@ per flush — live in [`packages/client/AGENTS.md`](packages/client/AGENTS.md).
 | `POST` | `/api/ingest/otlp/v1/traces` | Translate OTLP JSON/protobuf traces into spans |
 | `POST` | `/api/ingest/otlp/v1/metrics` | Translate OTLP JSON/protobuf metrics into samples |
 | `POST` | `/api/ingest/otlp/v1/logs` | Translate OTLP JSON/protobuf logs into log records |
+| `POST` | `/api/ingest/browser` | Browser SDK batches (public key + origin allowlist, see below) |
 
 ### Read APIs
 
@@ -532,6 +569,8 @@ per flush — live in [`packages/client/AGENTS.md`](packages/client/AGENTS.md).
 | `GET` | `/api/sessions/:id` | JSON session timeline with turns, tools, spans, logs, and events |
 | `GET` | `/api/slos` | JSON SLO definitions and latest evaluations |
 | `GET` | `/api/monitors` | JSON realtime monitor evaluations |
+| `GET` | `/api/replays/:id/events` | rrweb events for one browser session |
+| `GET` | `/api/heatmaps` | JSON click points and scroll-depth reach for a page |
 | `GET` | `/api/admin/audit` | JSON audit events for admin users |
 | `GET` | `/api/admin/auth/policy` | Sanitized auth/OIDC role policy for admin users |
 | `GET` | `/api/admin/monitors` | JSON monitor definitions for admin users |

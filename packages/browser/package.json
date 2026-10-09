@@ -1,0 +1,44 @@
+{
+  "name": "pulsemon-browser",
+  "version": "0.1.0",
+  "description": "Browser SDK for Pulsemon: session replay (rrweb), click and scroll heatmap events, rage/dead clicks and errors, private by default.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/stukennedy/pulsemon.git",
+    "directory": "packages/browser"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./iife": "./dist/pulsemon-browser.iife.js"
+  },
+  "files": [
+    "dist/**/*",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun build src/index.ts --outdir dist --format esm --target browser --external @rrweb/record && bun build src/iife.ts --outfile dist/pulsemon-browser.iife.js --format iife --target browser --minify && tsc -p tsconfig.build.json",
+    "type-check": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "bun test",
+    "test:run": "bun test"
+  },
+  "dependencies": {
+    "@rrweb/record": "2.1.6",
+    "@rrweb/types": "2.1.6",
+    "@rrweb/utils": "2.1.6",
+    "rrdom": "2.1.6",
+    "rrweb": "2.1.6",
+    "rrweb-snapshot": "2.1.6"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.1",
+    "happy-dom": "20.14.5",
+    "ws": "8.21.3"
+  }
+}

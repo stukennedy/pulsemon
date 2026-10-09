@@ -9,6 +9,8 @@ const NAV_ITEMS = [
   { href: "/slos", label: "SLOs", icon: "%" },
   { href: "/traces", label: "Traces", icon: "⋮" },
   { href: "/voice", label: "Voice", icon: "◎" },
+  { href: "/replays", label: "Replays", icon: "▶" },
+  { href: "/heatmaps", label: "Heatmaps", icon: "▦" },
 ];
 
 export const Nav: FC<{ active: string }> = ({ active }) => (

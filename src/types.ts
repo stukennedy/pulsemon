@@ -23,6 +23,7 @@ export interface Env {
   RAW_TELEMETRY_PREFIX?: string;
   INGEST_API_KEY?: string;
   INGEST_API_KEYS?: string;
+  BROWSER_INGEST_KEYS?: string;
   INGEST_MAX_BYTES?: string;
   INGEST_QUEUE_MAX_BYTES?: string;
   INGEST_QUEUE_MAX_OPERATIONS?: string;
