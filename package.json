@@ -13,7 +13,7 @@
     "routes": "hono-router ./src/routes ./src/router.ts",
     "deploy": "vite build && wrangler deploy",
     "test": "bun run client:build && bun test",
-    "typecheck": "bun run client:build && bun run client:type-check && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "typecheck": "bun run client:build && bun run client:type-check && bun run browser:type-check && tsc -p tsconfig.worker.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.test.json --noEmit",
     "check": "bun run typecheck && bun run test && bun run build && bun run restore:check",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply pulsemon-db",
@@ -27,7 +27,9 @@
     "restore:check": "bun scripts/restore-check.ts",
     "smoke": "bun scripts/smoke.ts",
     "client:build": "bun run --cwd packages/client build",
-    "client:type-check": "bun run --cwd packages/client type-check"
+    "client:type-check": "bun run --cwd packages/client type-check",
+    "browser:build": "bun run --cwd packages/browser build",
+    "browser:type-check": "bun run --cwd packages/browser type-check"
   },
   "dependencies": {
     "@starfederation/datastar-sdk": "^1.0.0",
