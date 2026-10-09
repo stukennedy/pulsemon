@@ -47,13 +47,22 @@
       }
     ]
   },
+  // Declared SQLite-backed under the original v1 tag: wrangler only applies newer
+  // tags, so existing KV-backed deployments are untouched and fresh Workers are
+  // born SQLite-backed. Do not add a v2 that re-declares the class.
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": ["SearchSession"]
+      "new_sqlite_classes": ["SearchSession"]
     }
-  ]
-  ,
+  ],
+  "logpush": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+    "logs": { "enabled": true, "invocation_logs": true },
+    "traces": { "enabled": true }
+  },
   // ---------------------------------------------------------------------------
   // UAT — the Multiverse DPT platform's non-production telemetry sink.
   //

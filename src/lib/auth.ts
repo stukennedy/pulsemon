@@ -129,12 +129,13 @@ export async function requireAdminUi(c: Context<{ Bindings: Env }>): Promise<UiP
 }
 
 export async function checkUiAuth(c: Context<{ Bindings: Env }>): Promise<Response | null> {
-  if (!isUiAuthConfigured(c)) return null;
-
   const path = new URL(c.req.url).pathname;
   if (path.startsWith("/api/ingest")) return null;
   if (path === "/api/admin/maintenance") return null;
+  if (path === "/api/admin/queue/replay") return null;
   if (path.startsWith("/auth/")) return null;
+
+  if (!isUiAuthConfigured(c)) return oidcUnauthorizedResponse(c);
 
   if (await uiPrincipalFromRequest(c)) return null;
 

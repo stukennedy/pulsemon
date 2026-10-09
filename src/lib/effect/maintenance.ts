@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { Env } from "@/types";
-import { DatabaseError, ValidationError } from "./errors";
+import { ConfigurationError, DatabaseError } from "./errors";
 
 export interface MaintenanceConfig {
   readonly retentionDays: number;
@@ -54,12 +54,12 @@ function integerConfig(
   fallback: number,
   min: number,
   max: number
-): Effect.Effect<number, ValidationError> {
+): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(fallback);
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    return Effect.fail(new ValidationError({
+    return Effect.fail(new ConfigurationError({
       message: `${name} must be an integer between ${min} and ${max}`,
     }));
   }
@@ -67,7 +67,7 @@ function integerConfig(
   return Effect.succeed(parsed);
 }
 
-export function maintenanceConfigFromEnv(env: MaintenanceEnv): Effect.Effect<MaintenanceConfig, ValidationError> {
+export function maintenanceConfigFromEnv(env: MaintenanceEnv): Effect.Effect<MaintenanceConfig, ConfigurationError> {
   return Effect.gen(function* () {
     const retentionDays = yield* integerConfig("RETENTION_DAYS", env.RETENTION_DAYS, 30, 1, 3650);
     const metricRollupAfterMinutes = yield* integerConfig(
@@ -246,7 +246,7 @@ export function runMaintenance(
 
 export function runMaintenanceFromEnv(
   env: Pick<Env, "DB"> & MaintenanceEnv
-): Effect.Effect<MaintenanceResult, DatabaseError | ValidationError> {
+): Effect.Effect<MaintenanceResult, ConfigurationError | DatabaseError> {
   return Effect.gen(function* () {
     const config = yield* maintenanceConfigFromEnv(env);
     return yield* runMaintenance(env.DB, config);

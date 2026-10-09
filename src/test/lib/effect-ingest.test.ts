@@ -121,8 +121,11 @@ describe("Effect ingest service", () => {
 
     expect(Either.isLeft(result)).toBe(true);
     if (Either.isLeft(result)) {
-      expect(result.left._tag).toBe("DatabaseError");
-      expect(result.left.message).toBe("db down");
+      expect(result.left).toBeInstanceOf(DatabaseError);
+      if (result.left instanceof DatabaseError) {
+        expect(result.left.message).toBe("Internal server error");
+        expect(result.left.internalMessage).toBe("db down");
+      }
     }
   });
 

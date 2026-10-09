@@ -10,6 +10,8 @@ import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const sessionId = c.req.param("id");
+  if (sessionId === undefined) return c.notFound();
+
   const tab: SessionDetailTab = c.req.query("view") === "activity" ? "activity" : "turns";
   const result = await Effect.runPromise(Effect.either(
     getRealtimeSession(c.env.DB, tenantScopeFromEnv(c.env), sessionId)

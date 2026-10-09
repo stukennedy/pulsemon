@@ -62,10 +62,10 @@ describe("GET /voice/compare", () => {
     expect(res.status).toBe(404);
   });
 
-  it("returns 400 for an out-of-range baseline window", async () => {
+  it("returns 422 for an out-of-range baseline window", async () => {
     const ctx = createTestContext();
     ctx.seedVoiceTurn({ session_id: "session-a" });
     const res = await ctx.request("/voice/compare?a=session-a&reference=baseline&days=900");
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
   });
 });

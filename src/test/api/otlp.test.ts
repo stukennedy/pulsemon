@@ -37,6 +37,20 @@ describe("POST /api/ingest/otlp", () => {
     ctx = createTestContext();
   });
 
+  it("returns a generic 400 for malformed OTLP protobuf", async () => {
+    const res = await ctx.request("/api/ingest/otlp/v1/traces", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer test-key",
+        "Content-Type": "application/x-protobuf",
+      },
+      body: new Uint8Array([0x0a, 0xff]),
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json() as unknown).toEqual({ error: "Invalid OTLP protobuf" });
+  });
+
   it("translates OTLP JSON traces into spans", async () => {
     const res = await ctx.request("/api/ingest/otlp/v1/traces", {
       method: "POST",

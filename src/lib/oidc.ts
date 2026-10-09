@@ -151,16 +151,37 @@ function redirectUri(c: Context<{ Bindings: Env }>) {
 }
 
 function safeReturnTo(raw: string | null) {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/";
-  return raw;
+  if (!raw || !raw.startsWith("/") || /[\\\u0000-\u001f\u007f]/.test(raw)) return "/";
+  const sentinelOrigin = "https://pulsemon.invalid";
+  try {
+    const resolved = new URL(raw, sentinelOrigin);
+    return resolved.origin === sentinelOrigin ? raw : "/";
+  } catch {
+    return "/";
+  }
+}
+
+class OidcProviderError extends Error {
+  constructor(
+    readonly operation: "token_exchange" | "userinfo",
+    readonly providerStatus: number
+  ) {
+    super(`OIDC provider ${operation} failed`);
+  }
+}
+
+class OidcCallbackValidationError extends Error {
+  constructor(readonly reason: string) {
+    super("OIDC callback is invalid");
+  }
 }
 
 function decodeJwtPayload(token: string): OidcClaims & Record<string, unknown> {
   const [, payload] = token.split(".");
-  if (!payload) throw new Error("id_token is missing a payload");
+  if (!payload) throw new OidcCallbackValidationError("id_token_payload_missing");
   const claims = decodeJson(payload);
   if (!claims || typeof claims !== "object" || Array.isArray(claims)) {
-    throw new Error("id_token payload is not an object");
+    throw new OidcCallbackValidationError("id_token_payload_invalid");
   }
   return claims as OidcClaims & Record<string, unknown>;
 }
@@ -178,17 +199,17 @@ function validateClaims(
   const policy = authPolicyFromEnv(env);
   const exp = typeof claims.exp === "number" ? claims.exp : Number(claims.exp);
   if (!Number.isFinite(exp) || exp <= nowSeconds()) {
-    throw new Error("id_token is expired");
+    throw new OidcCallbackValidationError("id_token_expired");
   }
   if (claims.iss !== policy.oidc.issuer) {
-    throw new Error("id_token issuer does not match OIDC_ISSUER");
+    throw new OidcCallbackValidationError("id_token_issuer_invalid");
   }
   const audience = claimStrings(claims.aud);
   if (!policy.oidc.clientId || !audience.includes(policy.oidc.clientId)) {
-    throw new Error("id_token audience does not match OIDC_CLIENT_ID");
+    throw new OidcCallbackValidationError("id_token_audience_invalid");
   }
   if (claims.nonce !== nonce) {
-    throw new Error("id_token nonce does not match login state");
+    throw new OidcCallbackValidationError("id_token_nonce_invalid");
   }
 }
 
@@ -213,13 +234,11 @@ async function tokenRequest(c: Context<{ Bindings: Env }>, code: string) {
   });
   const payload = await response.json().catch(() => null) as TokenResponse | null;
   if (!response.ok) {
-    const message = typeof payload?.error_description === "string"
-      ? payload.error_description
-      : "OIDC token exchange failed";
-    throw new Error(message);
+    throw new OidcProviderError("token_exchange", response.status);
   }
-  if (!payload) throw new Error("OIDC token response was not JSON");
-  if (typeof payload.error === "string") throw new Error(payload.error);
+  if (!payload || typeof payload.error === "string") {
+    throw new OidcProviderError("token_exchange", response.status);
+  }
   return payload;
 }
 
@@ -230,7 +249,7 @@ async function userInfoClaims(env: Env, accessToken: unknown) {
   const response = await fetch(endpoint, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-  if (!response.ok) throw new Error("OIDC userinfo request failed");
+  if (!response.ok) throw new OidcProviderError("userinfo", response.status);
   const body = await response.json().catch(() => null);
   return body && typeof body === "object" && !Array.isArray(body)
     ? body as OidcClaims & Record<string, unknown>
@@ -369,15 +388,43 @@ export async function oidcCallbackResponse(c: Context<{ Bindings: Env }>) {
     return new Response(null, {
       status: 302,
       headers: [
-        ["Location", state.returnTo],
+        ["Location", safeReturnTo(state.returnTo)],
         ["Set-Cookie", cookieHeader(c, OIDC_SESSION_COOKIE, session, sessionTtlSeconds(c.env))],
         ["Set-Cookie", clearCookieHeader(c, OIDC_STATE_COOKIE)],
       ],
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "OIDC callback failed";
-    await Effect.runPromise(auditAuth(c, null, "failed", { reason: message }));
-    return authFailure(message, 400);
+    const failure = error instanceof OidcProviderError
+      ? {
+          reason: `provider_${error.operation}_failed`,
+          provider_status: error.providerStatus,
+          response_status: 502,
+          client_message: "OIDC authentication failed",
+        }
+      : error instanceof OidcCallbackValidationError
+        ? {
+            reason: error.reason,
+            response_status: 400,
+            client_message: "OIDC callback is invalid",
+          }
+        : {
+            reason: "internal_callback_failure",
+            response_status: 500,
+            client_message: "OIDC authentication failed",
+          };
+    console.error(JSON.stringify({
+      event: "pulsemon.oidc_callback_failed",
+      method: c.req.method,
+      path: new URL(c.req.url).pathname,
+      reason: failure.reason,
+      response_status: failure.response_status,
+      ...(error instanceof OidcProviderError ? { provider_status: error.providerStatus } : {}),
+    }));
+    await Effect.runPromise(auditAuth(c, null, "failed", {
+      reason: failure.reason,
+      ...(error instanceof OidcProviderError ? { provider_status: error.providerStatus } : {}),
+    }));
+    return authFailure(failure.client_message, failure.response_status);
   }
 }
 

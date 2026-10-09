@@ -3,9 +3,11 @@ import type { AgentToolCall, Event, VoiceTurn } from "@/db/schema";
 import type { RealtimeSessionDetail, VoiceSessionSummary } from "@/lib/effect/sessions";
 import { voiceSessionStatus } from "@/lib/effect/sessions";
 import { STAGE_COLOURS, STAGE_LABELS, type WaterfallRow } from "@/lib/effect/voice-waterfall";
+import type { VoiceTurnTimelineResult } from "@/lib/effect/voice-turn-timeline";
 import { sharedTraceIds } from "@/lib/effect/turn-correlation";
 import { durationColor, formatDuration, statusColor } from "@/components/StatusBadge";
 import { LocalTime } from "@/components/LocalTime";
+import { VoiceTurnTimeline } from "@/components/VoiceTurnTimeline";
 
 function formatMoney(value: number) {
   if (value === 0) return "$0";
@@ -206,11 +208,23 @@ const ToolCallRow: FC<{ call: AgentToolCall }> = ({ call }) => {
   );
 };
 
-const TurnCard: FC<{ turn: VoiceTurn; index: number; toolCalls: AgentToolCall[]; events: Event[] }> = ({
+const TurnCard: FC<{
+  turn: VoiceTurn;
+  index: number;
+  toolCalls: AgentToolCall[];
+  events: Event[];
+  timeline: VoiceTurnTimelineResult;
+  /** Session-level proportional bar for this one turn (`voice-waterfall.ts`,
+   *  the pre-existing relative-stage geometry), shown when `timeline` has no
+   *  PR-A spans/events/tool-call timing to draw an absolute gantt from. */
+  fallbackRow: WaterfallRow;
+}> = ({
   turn,
   index,
   toolCalls,
   events,
+  timeline,
+  fallbackRow,
 }) => {
   const tone = turn.interruption ? "#f59e0b" : turn.role === "user" ? "#22d3ee" : "#818cf8";
   return (
@@ -244,6 +258,16 @@ const TurnCard: FC<{ turn: VoiceTurn; index: number; toolCalls: AgentToolCall[];
         <div class="text-xs mt-3" style={turn.transcript ? "color:#e2e8f0" : "color:#475569"}>
           {turn.transcript ?? "No transcript — producer is content-free (enable transcript reporting to see it here)"}
         </div>
+        {timeline.hasTimingData ? (
+          <VoiceTurnTimeline result={timeline} />
+        ) : fallbackRow.segments.length > 0 ? (
+          <div class="mt-3 flex items-center gap-3">
+            <WaterfallBar row={fallbackRow} />
+            <span class="text-[10px] font-mono shrink-0" style="color:#475569">
+              stage breakdown (pre-telemetry-upgrade data)
+            </span>
+          </div>
+        ) : null}
         {toolCalls.map((call) => (
           <ToolCallRow call={call} />
         ))}
@@ -429,12 +453,18 @@ export const VoiceSessionDetailView: FC<{ detail: RealtimeSessionDetail; session
                 No turns recorded for this session
               </div>
             ) : (
-              detail.turnsWithTelemetry.map(({ turn, toolCalls, events }, index) => (
+              detail.turnsWithTelemetry.map(({ turn, toolCalls, events, timeline }, index) => (
                 <TurnCard
                   turn={turn}
                   index={index}
                   toolCalls={toolCalls}
                   events={events}
+                  timeline={timeline}
+                  // Built from the same `turns` array in the same order
+                  // (sessions.ts), so this always lines up with `turn` —
+                  // an empty-segments row (index somehow missing) just
+                  // renders nothing extra rather than crashing.
+                  fallbackRow={detail.waterfallRows[index] ?? { turn, totalMs: null, reportedMs: null, widthPct: 0, segments: [] }}
                 />
               ))
             )}

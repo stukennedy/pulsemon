@@ -96,4 +96,36 @@ describe("admin monitor definitions", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("returns 422 for well-formed monitor input that fails validation", async () => {
+    const ctx = createTestContext({ env });
+
+    const res = await ctx.request("/api/admin/monitors", {
+      method: "POST",
+      headers: {
+        Authorization: basic("admin", "secret"),
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ kind: "metric_avg", threshold: 250, window_minutes: 15 }),
+    });
+
+    expect(res.status).toBe(422);
+    expect(await res.json()).toMatchObject({ error: expect.stringContaining("name") });
+  });
+
+  it("returns 400 for malformed JSON", async () => {
+    const ctx = createTestContext({ env });
+
+    const res = await ctx.request("/api/admin/monitors", {
+      method: "POST",
+      headers: {
+        Authorization: basic("admin", "secret"),
+        "Content-Type": "application/json",
+      },
+      body: '{"name":',
+    });
+
+    expect(res.status).toBe(400);
+    expect(await res.json() as unknown).toEqual({ error: "Invalid JSON" });
+  });
 });

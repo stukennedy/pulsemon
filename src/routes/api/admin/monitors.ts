@@ -3,7 +3,7 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { Effect, Either } from "effect";
 import type { Env } from "@/types";
 import { requireAdminUi } from "@/lib/auth";
-import { errorStatus } from "@/lib/effect/errors";
+import { errorStatus, MalformedRequestError } from "@/lib/effect/errors";
 import {
   createMonitorDefinition,
   listMonitorDefinitions,
@@ -29,7 +29,7 @@ async function readJson(c: Context<{ Bindings: Env }>) {
   try {
     return await c.req.json();
   } catch {
-    return {};
+    return new MalformedRequestError({ message: "Invalid JSON" });
   }
 }
 
@@ -54,6 +54,9 @@ export const onRequestPost = async (c: Context<{ Bindings: Env }>) => {
   if (principal instanceof Response) return principal;
 
   const body = await readJson(c);
+  if (body instanceof MalformedRequestError) {
+    return c.json({ error: body.message }, errorStatus(body) as ContentfulStatusCode);
+  }
   const result = await Effect.runPromise(Effect.either(
     createMonitorDefinition(c.env.DB, tenantScopeFromEnv(c.env), monitorInput(body))
   ));

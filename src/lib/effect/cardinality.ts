@@ -1,7 +1,7 @@
 import { Effect } from "effect";
 import type { Env } from "@/types";
 import type { ApiKeyContext } from "./auth";
-import { DatabaseError, ValidationError } from "./errors";
+import { ConfigurationError, DatabaseError, ValidationError } from "./errors";
 import type { TelemetryBatchWrite } from "./repository";
 
 export interface IngestCardinalityConfig {
@@ -13,7 +13,7 @@ export interface IngestCardinalityController {
     context: ApiKeyContext,
     scope: string,
     batch: TelemetryBatchWrite
-  ) => Effect.Effect<void, DatabaseError | ValidationError>;
+  ) => Effect.Effect<void, ConfigurationError | DatabaseError | ValidationError>;
 }
 
 type CardinalityEnv = Pick<Env, "INGEST_CARDINALITY_MAX_VALUES_PER_KEY">;
@@ -51,12 +51,12 @@ function integerConfig(
   fallback: number,
   min: number,
   max: number
-): Effect.Effect<number, ValidationError> {
+): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(fallback);
 
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
-    return Effect.fail(new ValidationError({
+    return Effect.fail(new ConfigurationError({
       message: `${name} must be an integer between ${min} and ${max}`,
     }));
   }
@@ -66,7 +66,7 @@ function integerConfig(
 
 export function cardinalityConfigFromEnv(
   env: CardinalityEnv
-): Effect.Effect<IngestCardinalityConfig, ValidationError> {
+): Effect.Effect<IngestCardinalityConfig, ConfigurationError> {
   return Effect.gen(function* () {
     const maxValuesPerKey = yield* integerConfig(
       "INGEST_CARDINALITY_MAX_VALUES_PER_KEY",

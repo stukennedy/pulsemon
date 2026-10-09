@@ -10,10 +10,13 @@ import { evaluateAndPersistRealtimeMonitors } from "./lib/effect/monitors";
 import { evaluateAndPersistSlos } from "./lib/effect/slos";
 import { processTelemetryQueueBatch, type TelemetryQueueMessage } from "./lib/effect/telemetry-queue";
 import { tenantScopeFromEnv } from "./lib/tenant";
+import { unexpectedErrorResponse } from "./lib/http-errors";
 
 export { SearchSession } from "./lib/search-session";
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.onError(unexpectedErrorResponse);
 
 app.use("*", async (c, next) => {
   const authResponse = await checkUiAuth(c);

@@ -55,10 +55,30 @@ global access. Keep `Env` parsing in routes or small `fromEnv` helpers.
 ## Error Standards
 
 - Use typed errors from `errors.ts`.
-- Validation problems should be `ValidationError`.
+- Unparseable bodies (bad JSON, bad gzip) should be `MalformedRequestError` (400); schema
+  failures should be `ValidationError` (422).
+- Bad deployment config should be `ConfigurationError` and unexpected failures
+  `InternalError`; both, like `DatabaseError`, return a generic 500 and log the detail.
 - Payload size problems should be `PayloadTooLargeError`.
 - Storage failures should be `DatabaseError`.
 - Unsupported content types/encodings should use `UnsupportedMediaTypeError`.
+
+## Voice Concurrency And Turn Timeline
+
+- `voice-concurrency.ts`: pure interval-sweep geometry (bucketed peak/avg/min
+  concurrency, `MetricSeriesResult`-shaped) shared by sessions/LLM/TTS
+  concurrency; `voice-concurrency-io.ts` is its D1 query layer (bounded
+  window sweep + live "now" tiles), beside `sessions.ts`.
+- `voice-turn-timeline.ts`: pure absolute-time gantt geometry for one voice
+  turn (mirrors `TraceWaterfall`'s leftPct/widthPct math), consumed by
+  `sessions.ts#getRealtimeSession` and rendered by
+  `components/VoiceTurnTimeline.tsx`.
+
+## Content Staging
+
+- `content-staging.ts`: keeps end-user content (transcripts, tool-call input /
+  output) out of the queue: staged to R2 at enqueue, hydrated on consume.
+  Queues have no regional residency control, so the queue only sees ids and metrics.
 
 ## Tests
 

@@ -3,9 +3,12 @@ import * as Schema from "effect/Schema";
 import type { Env, TenantScope } from "@/types";
 import { authorizeIngest, type ApiKeyContext, type ApiKeyDeps } from "./auth";
 import { makeIngestCardinalityController } from "./cardinality";
+import { hydrateContent, stageContent, type ContentRef } from "./content-staging";
 import {
+  ConfigurationError,
   PayloadTooLargeError,
   ValidationError,
+  InternalError,
   MissingConfigError,
   type IngestError,
 } from "./errors";
@@ -91,10 +94,16 @@ export interface TelemetryQueueMessage {
   readonly batch: TelemetryBatchWrite;
   readonly counts: Record<string, number>;
   readonly sampled_out?: number;
+  /** Content fields lifted out of `batch` into R2 at the edge (content-staging.ts).
+   *  Absent on messages that carry no content. */
+  readonly content_refs?: readonly ContentRef[];
 }
 
 export interface QueuedIngestDeps extends ApiKeyDeps {
   readonly queue?: Queue<TelemetryQueueMessage>;
+  /** The EU-pinned bucket content is staged in before enqueue (RAW_TELEMETRY). */
+  readonly contentBucket?: R2Bucket;
+  readonly contentPrefix?: string;
   readonly governance?: IngestGovernanceConfig;
   readonly sampleRate?: string;
   readonly queueMaxBytes?: string;
@@ -153,22 +162,22 @@ function queueMaxBytes(value: string | undefined) {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_QUEUE_MAX_BYTES;
 }
 
-function queueMaxOperations(value: string | undefined): Effect.Effect<number, ValidationError> {
+function queueMaxOperations(value: string | undefined): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(DEFAULT_QUEUE_MAX_OPERATIONS);
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_QUEUE_MAX_OPERATIONS) {
-    return Effect.fail(new ValidationError({
+    return Effect.fail(new ConfigurationError({
       message: `INGEST_QUEUE_MAX_OPERATIONS must be an integer between 1 and ${MAX_QUEUE_MAX_OPERATIONS}`,
     }));
   }
   return Effect.succeed(parsed);
 }
 
-function sampleRate(value: string | undefined): Effect.Effect<number, ValidationError> {
+function sampleRate(value: string | undefined): Effect.Effect<number, ConfigurationError> {
   if (value === undefined || value.trim() === "") return Effect.succeed(1);
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    return Effect.fail(new ValidationError({ message: "INGEST_SAMPLE_RATE must be a number between 0 and 1" }));
+    return Effect.fail(new ConfigurationError({ message: "INGEST_SAMPLE_RATE must be a number between 0 and 1" }));
   }
   return Effect.succeed(parsed);
 }
@@ -487,7 +496,7 @@ function enqueueMessage(
       return yield* Effect.fail(new PayloadTooLargeError({ message: `Max ${maxOperations} operations per batch` }));
     }
 
-    const message: TelemetryQueueMessage = {
+    const assembled: TelemetryQueueMessage = {
       version: 1,
       id: uuid(),
       enqueued_at: now(),
@@ -499,7 +508,14 @@ function enqueueMessage(
       ...(sampledOut > 0 ? { sampled_out: sampledOut } : {}),
     };
 
-    if (total === 0) return accepted(message);
+    if (total === 0) return accepted(assembled);
+
+    // Content leaves the envelope BEFORE the size check and before anything
+    // reaches the queue: what is measured and sent is references only.
+    const message = yield* stageContent(
+      { RAW_TELEMETRY: deps.contentBucket, RAW_TELEMETRY_PREFIX: deps.contentPrefix },
+      assembled,
+    );
 
     const maxBytes = queueMaxBytes(deps.queueMaxBytes);
     const bytes = messageBytes(message);
@@ -514,7 +530,7 @@ function enqueueMessage(
         await deps.queue!.send(message, { contentType: "json" });
         return accepted(message);
       },
-      catch: (error) => new MissingConfigError({
+      catch: (error) => new InternalError({
         message: error instanceof Error ? error.message : "Failed to enqueue telemetry",
       }),
     });
@@ -716,9 +732,12 @@ export function writeTelemetryQueueMessage(
     if (total > maxOperations) {
       return yield* Effect.fail(new PayloadTooLargeError({ message: `Max ${maxOperations} operations per batch` }));
     }
+    // The archive keeps the envelope as it travelled — references, no content.
     yield* archiveRawTelemetryMessage(env, message);
-    yield* cardinality.enforce(message.context, message.required_scope, message.batch);
-    yield* repository.writeBatch(message.batch);
+    // Content returns from R2 only here, on the way into D1 (both EU-pinned).
+    const hydrated = yield* hydrateContent(env, message);
+    yield* cardinality.enforce(hydrated.context, hydrated.required_scope, hydrated.batch);
+    yield* repository.writeBatch(hydrated.batch);
   });
 }
 
@@ -754,6 +773,12 @@ export async function processTelemetryQueueBatch(
   for (const message of batch.messages) {
     const result = await Effect.runPromise(Effect.either(writeTelemetryQueueMessage(env, message.body)));
     if (result._tag === "Left") {
+      console.error(JSON.stringify({
+        event: "pulsemon.queue_message_failed",
+        error_type: result.left._tag,
+        attempts: message.attempts,
+        action: "retry",
+      }));
       message.retry({ delaySeconds: Math.min(300, 2 ** Math.min(message.attempts, 8)) });
     } else {
       message.ack();

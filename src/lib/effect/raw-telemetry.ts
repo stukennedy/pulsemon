@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { Env } from "@/types";
-import { MissingConfigError, type IngestError } from "./errors";
+import { InternalError, MissingConfigError, type IngestError } from "./errors";
 import type { TelemetryQueueMessage } from "./telemetry-queue";
 
 export type RawTelemetryEnv = Pick<
@@ -63,7 +63,7 @@ export function archiveRawTelemetryMessage(
         },
       });
     },
-    catch: (error) => new MissingConfigError({
+    catch: (error) => new InternalError({
       message: error instanceof Error ? error.message : "Failed to archive raw telemetry",
     }),
   });

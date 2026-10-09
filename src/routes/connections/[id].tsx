@@ -13,6 +13,8 @@ import { tenantScopeFromEnv } from "@/lib/tenant";
 
 export const onRequestGet = async (c: Context<{ Bindings: Env }>) => {
   const id = c.req.param("id");
+  if (id === undefined) return c.notFound();
+
   const result = await Effect.runPromise(Effect.either(getConnectionDetail(
     { repository: makeD1TelemetryQueryRepository(c.env.DB, tenantScopeFromEnv(c.env)) },
     id
