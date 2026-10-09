@@ -15,6 +15,8 @@ route handlers and scheduled jobs invoke.
   budgets.
 - `query.ts`, `metric-series.ts`, `sessions.ts`, `session-compare.ts`:
   read-side query services.
+- `browser.ts`, `browser-query.ts`: browser analytics ingest (public-key auth,
+  replay chunks to R2, idempotent per `(session, seq)`) and its read side.
 - `monitors.ts`, `alerts.ts`, `slos.ts`, `voice-slo.ts`, `maintenance.ts`,
   `audit.ts`: operator workflows and scheduled/admin behaviors (`voice-slo.ts`
   is the registry used by explicitly voice-sourced SLO definitions).
@@ -85,3 +87,12 @@ global access. Keep `Env` parsing in routes or small `fromEnv` helpers.
 - Add direct service tests in `src/test/lib` for domain behavior.
 - Mock repositories/controllers by passing dependency objects.
 - Route tests should not be the only coverage for non-trivial domain logic.
+
+## Browser Analytics
+
+- Session counters are recomputed from `browser_events` / `browser_batches` on
+  every batch rather than incremented, so a retried batch cannot double count.
+- Replay chunks are stored verbatim and concatenated as text on read
+  (`streamReplayEvents`); never parse a whole session into memory.
+- Browser keys are public. Treat everything in a browser batch as untrusted,
+  and keep governance (redaction) on selectors, error messages and props.

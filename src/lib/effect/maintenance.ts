@@ -1,6 +1,6 @@
 import { Effect } from "effect";
 import type { Env } from "@/types";
-import { ConfigurationError, DatabaseError } from "./errors";
+import { ConfigurationError, DatabaseError, InternalError } from "./errors";
 
 export interface MaintenanceConfig {
   readonly retentionDays: number;
@@ -22,6 +22,9 @@ export interface MaintenanceResult {
     readonly agent_tool_calls: number;
     readonly metric_rollups_1m: number;
     readonly ingest_rate_limits: number;
+    readonly browser_events: number;
+    readonly browser_sessions: number;
+    readonly browser_batches: number;
   };
 }
 
@@ -154,10 +157,50 @@ function deleteOlderThan(
   });
 }
 
+function deleteExpiredReplayBatches(
+  db: D1Database,
+  bucket: R2Bucket | undefined,
+  cutoff: string,
+  config: Pick<MaintenanceConfig, "deleteChunkSize" | "deleteMaxChunksPerTable">
+): Effect.Effect<number, DatabaseError | InternalError> {
+  return Effect.gen(function* () {
+    let totalDeleted = 0;
+    for (let chunk = 0; chunk < config.deleteMaxChunksPerTable; chunk++) {
+      const keys = yield* dbEffect(async () => (await db.prepare(
+        `SELECT replay_key FROM browser_batches WHERE received_at < ? ORDER BY received_at ASC, rowid ASC LIMIT ?`
+      ).bind(cutoff, config.deleteChunkSize).all<{ replay_key: string | null }>()).results);
+      if (keys.length === 0) break;
+
+      const replayKeys = keys.map((row) => row.replay_key).filter((key): key is string => Boolean(key));
+      if (bucket && replayKeys.length > 0) {
+        yield* Effect.tryPromise({
+          try: async () => {
+            for (let i = 0; i < replayKeys.length; i += 1000) await bucket.delete(replayKeys.slice(i, i + 1000));
+          },
+          catch: (error) => new InternalError({ message: `Replay chunk delete failed: ${messageFromUnknown(error)}` }),
+        });
+      }
+
+      const deleted = yield* runStatement(
+        db,
+        `DELETE FROM browser_batches WHERE rowid IN (
+           SELECT rowid FROM browser_batches WHERE received_at < ? ORDER BY received_at ASC, rowid ASC LIMIT ?
+         )`,
+        cutoff,
+        keys.length
+      );
+      totalDeleted += deleted;
+      if (keys.length < config.deleteChunkSize) break;
+    }
+    return totalDeleted;
+  });
+}
+
 export function runMaintenance(
   db: D1Database,
-  config: MaintenanceConfig
-): Effect.Effect<MaintenanceResult, DatabaseError> {
+  config: MaintenanceConfig,
+  replayBucket?: R2Bucket
+): Effect.Effect<MaintenanceResult, DatabaseError | InternalError> {
   return Effect.gen(function* () {
     const rollupCutoff = minutesAgoIso(config.metricRollupAfterMinutes);
     const retentionCutoff = daysAgoIso(config.retentionDays);
@@ -215,6 +258,9 @@ export function runMaintenance(
       agentToolCalls,
       metricRollups,
       ingestRateLimits,
+      browserEvents,
+      browserSessions,
+      browserBatches,
     ] = yield* Effect.all([
       deleteOlderThan(db, "connections", "started_at", retentionCutoff, config),
       deleteOlderThan(db, "spans", "started_at", retentionCutoff, config),
@@ -225,6 +271,9 @@ export function runMaintenance(
       deleteOlderThan(db, "agent_tool_calls", "started_at", retentionCutoff, config),
       deleteOlderThan(db, "metric_rollups_1m", "bucket_start", rollupRetentionCutoff, config),
       deleteOlderThan(db, "ingest_rate_limits", "window_start", rateLimitCutoff, config),
+      deleteOlderThan(db, "browser_events", "timestamp", retentionCutoff, config),
+      deleteOlderThan(db, "browser_sessions", "last_seen_at", retentionCutoff, config),
+      deleteExpiredReplayBatches(db, replayBucket, retentionCutoff, config),
     ], { concurrency: 1 });
 
     return {
@@ -239,16 +288,19 @@ export function runMaintenance(
         agent_tool_calls: agentToolCalls,
         metric_rollups_1m: metricRollups,
         ingest_rate_limits: ingestRateLimits,
+        browser_events: browserEvents,
+        browser_sessions: browserSessions,
+        browser_batches: browserBatches,
       },
     };
   });
 }
 
 export function runMaintenanceFromEnv(
-  env: Pick<Env, "DB"> & MaintenanceEnv
-): Effect.Effect<MaintenanceResult, ConfigurationError | DatabaseError> {
+  env: Pick<Env, "DB" | "RAW_TELEMETRY"> & MaintenanceEnv
+): Effect.Effect<MaintenanceResult, ConfigurationError | DatabaseError | InternalError> {
   return Effect.gen(function* () {
     const config = yield* maintenanceConfigFromEnv(env);
-    return yield* runMaintenance(env.DB, config);
+    return yield* runMaintenance(env.DB, config, env.RAW_TELEMETRY);
   });
 }

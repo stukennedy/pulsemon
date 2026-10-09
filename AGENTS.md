@@ -34,6 +34,8 @@ presentation.
 - `src/db/schema.ts`: Drizzle table declarations and inferred types.
 - `packages/client/`: `pulsemon-client`, the buffered ingest client
   (built to `dist/` and driven against the receiver by `src/test/contract/`).
+- `packages/browser/`: `pulsemon-browser`, the session replay and heatmap SDK
+  (wire format in `specs/browser-analytics.md`).
 - `src/test/`: test helpers and API/service/route/SDK tests.
 - `migrations/`: ordered D1 SQL migrations.
 - `scripts/`: operational scripts for smoke, load, restore, DR, and OTLP
