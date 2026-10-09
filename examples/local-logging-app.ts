@@ -1,6 +1,6 @@
 /**
  * A tiny Bun HTTP app instrumented with the one Pulsemon client,
- * `@multiverse-com/pulsemon` (packages/client in this repo). Run the receiver
+ * `pulsemon-client` (packages/client in this repo). Run the receiver
  * (`bun run dev`, :8788) and then:
  *
  *   bun run client:build && PULSEMON_KEY=local-dev-key bun run example:logs
@@ -9,9 +9,9 @@
  * What it shows: records BUFFER (log / span / metric are synchronous), ONE
  * `flush()` per request sends everything in a single POST /api/ingest/batch,
  * and the client never throws — a dead receiver costs a console warning, not
- * a failed checkout. That is the shape every DPT surface uses.
+ * a failed checkout. That is the shape a typical producer uses.
  */
-import { createPulsemonClient } from "@multiverse-com/pulsemon";
+import { createPulsemonClient } from "pulsemon-client";
 
 const pulsemonUrl = process.env.PULSEMON_URL ?? "http://localhost:8788";
 const pulsemonKey = process.env.PULSEMON_KEY ?? "local-dev-key";

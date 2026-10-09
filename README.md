@@ -450,12 +450,11 @@ curl -s "$PULSEMON_URL/api/ingest/voice/turns" \
 
 ### Instrumenting an app
 
-Use the one client, [`@multiverse-com/pulsemon`](packages/client/README.md) — the
-same package every DPT surface ships. Records buffer; `flush()` sends them in a
-single `POST /api/ingest/batch`; nothing here ever throws or blocks a request:
+Use the one client, [`pulsemon-client`](packages/client/README.md). Records
+buffer; `flush()` sends them in a single `POST /api/ingest/batch`; nothing here ever throws or blocks a request:
 
 ```ts
-import { createPulsemonClient } from "@multiverse-com/pulsemon";
+import { createPulsemonClient } from "pulsemon-client";
 
 // PULSEMON_INGEST_URL + PULSEMON_INGEST_KEY from the environment; without both
 // the client is a no-op (`enabled: false`), not a degraded mode.

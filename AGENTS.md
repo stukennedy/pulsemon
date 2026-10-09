@@ -32,7 +32,7 @@ presentation.
 - `src/lib/`: auth, tenancy, facets, rendering, websocket search sessions.
 - `src/components/`: server-rendered JSX UI components.
 - `src/db/schema.ts`: Drizzle table declarations and inferred types.
-- `packages/client/`: `@multiverse-com/pulsemon`, the buffered ingest client
+- `packages/client/`: `pulsemon-client`, the buffered ingest client
   (built to `dist/` and driven against the receiver by `src/test/contract/`).
 - `src/test/`: test helpers and API/service/route/SDK tests.
 - `migrations/`: ordered D1 SQL migrations.

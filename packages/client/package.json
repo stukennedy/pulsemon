@@ -1,12 +1,9 @@
 {
-  "name": "@multiverse-com/pulsemon",
+  "name": "pulsemon-client",
   "version": "0.3.0",
-  "description": "Buffered, content-free-by-default ingest client for Pulsemon — the DPT realtime-observability receiver. Lives beside the receiver it speaks to.",
+  "description": "Buffered, content-free-by-default ingest client for Pulsemon, the realtime-observability receiver. Lives beside the receiver it speaks to.",
   "type": "module",
   "license": "Apache-2.0",
-  "publishConfig": {
-    "access": "restricted"
-  },
   "repository": {
     "type": "git",
     "url": "https://github.com/stukennedy/pulsemon.git",

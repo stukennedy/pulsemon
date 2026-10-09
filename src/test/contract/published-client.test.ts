@@ -1,7 +1,7 @@
 /**
  * Wire contract: the ingest client against THIS receiver.
  *
- * `@multiverse-com/pulsemon` (`packages/client`, resolved here as the built
+ * `pulsemon-client` (`packages/client`, resolved here as the built
  * workspace package: exactly the bytes that publish) is what surfaces use to
  * reach `/api/ingest/batch`. Its wire mapping was once hand-derived from a
  * rejected payload and drifted silently: every batch 400'd for a while,
@@ -18,7 +18,7 @@
  * is about the WIRE, not the pipeline (content-staging.test.ts owns that).
  */
 import { describe, expect, it } from "bun:test";
-import { createPulsemonClient, type FetchLike } from "@multiverse-com/pulsemon";
+import { createPulsemonClient, type FetchLike } from "pulsemon-client";
 import { createTestContext, type TestContext } from "../helpers";
 
 const TRANSCRIPT = "what is my account balance for the savings pot";
@@ -99,7 +99,7 @@ function emitEverything(client: ReturnType<typeof createPulsemonClient>) {
   client.metric({
     id: "metric-wire-1",
     service: "voice-gateway",
-    metricName: "dpt.slo.voice.turns",
+    metricName: "app.slo.voice.turns",
     metricType: "counter",
     value: 1,
     timestamp: T0,
@@ -146,7 +146,7 @@ function emitEverything(client: ReturnType<typeof createPulsemonClient>) {
   });
 }
 
-describe("published @multiverse-com/pulsemon client ↔ this receiver's ingest contract", () => {
+describe("published pulsemon-client client ↔ this receiver's ingest contract", () => {
   it("every record kind the client emits is accepted and persisted", async () => {
     const ctx = createTestContext();
     const errors: unknown[] = [];
@@ -181,7 +181,7 @@ describe("published @multiverse-com/pulsemon client ↔ this receiver's ingest c
 
     expect(one<{ metric_name: string; metric_type: string; value: number }>(
       "SELECT metric_name, metric_type, value FROM metrics WHERE id = ?", "metric-wire-1",
-    )).toEqual({ metric_name: "dpt.slo.voice.turns", metric_type: "counter", value: 1 });
+    )).toEqual({ metric_name: "app.slo.voice.turns", metric_type: "counter", value: 1 });
 
     // Content capture on: the transcript reaches D1. The TTS-degradation
     // reason rides `metadata`, not a column — that is the pinned shape.

@@ -21,7 +21,7 @@ import type { TelemetryQueueMessage } from "./telemetry-queue";
  * persisted message would poison itself into the dead-letter queue. They sit
  * beside the raw envelope archive under the same bucket and retention story.
  *
- * Scope matches the client's content-free contract (@multiverse-com/pulsemon
+ * Scope matches the client's content-free contract (pulsemon-client
  * scrubs every content-shaped attribute key before the wire; `transcript` is
  * the one field it can ship, behind PULSEMON_CONTENT_CAPTURE). Log messages
  * and attributes are governed (redaction) rather than staged — the surface

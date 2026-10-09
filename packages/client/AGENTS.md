@@ -1,4 +1,4 @@
-# @multiverse-com/pulsemon
+# pulsemon-client
 
 Transport for [Pulsemon](https://github.com/stukennedy/pulsemon), a realtime-app
 observability platform (connections, spans, `voice_turns`, `agent_tool_calls`,
